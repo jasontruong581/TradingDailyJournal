@@ -62,6 +62,13 @@ function money(value, digits = 2) {
   return num(value).toLocaleString("en-US", { minimumFractionDigits: digits, maximumFractionDigits: digits });
 }
 
+function hhmmss(isoString) {
+  if (!isoString) return "";
+  const d = new Date(isoString);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleTimeString("en-GB", { hour12: false });
+}
+
 function pct(v) { return `${(v * 100).toFixed(1)}%`; }
 
 function setText(id, value, cls) {
@@ -291,8 +298,8 @@ function renderPositionPage() {
       <td>${r.account_id}</td>
       <td>${r.position_id}</td>
       <td>${r.symbol}</td>
-      <td>${r.entry_time_vn}</td>
-      <td>${r.exit_time_vn}</td>
+      <td>${hhmmss(r.entry_time_vn)}</td>
+      <td>${hhmmss(r.exit_time_vn)}</td>
       <td>${r.entry_price}</td>
       <td>${r.exit_price}</td>
       <td>${r.lots}</td>
