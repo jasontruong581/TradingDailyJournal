@@ -1,0 +1,60 @@
+﻿<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Trading Daily Journal Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <main class="container">
+    <header class="hero">
+      <p class="kicker">Trading Daily Journal</p>
+      <h1>Performance Dashboard</h1>
+      <p id="last-updated">Loading data...</p>
+    </header>
+
+    <section class="kpi-grid">
+      <article class="kpi-card"><h2>Net PnL</h2><p id="kpi-net">-</p></article>
+      <article class="kpi-card"><h2>Total Positions</h2><p id="kpi-positions">-</p></article>
+      <article class="kpi-card"><h2>Win Rate</h2><p id="kpi-winrate">-</p></article>
+      <article class="kpi-card"><h2>Gross Loss</h2><p id="kpi-loss">-</p></article>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <h2>Daily Net Profit</h2>
+      </div>
+      <canvas id="pnl-chart" height="140"></canvas>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <h2>Recent Days</h2>
+      </div>
+      <div class="table-wrap">
+        <table id="summary-table">
+          <thead>
+            <tr>
+              <th>Date (VN)</th>
+              <th>Positions</th>
+              <th>Deals</th>
+              <th>Win</th>
+              <th>Loss</th>
+              <th>Net PnL</th>
+              <th>Withdraw</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

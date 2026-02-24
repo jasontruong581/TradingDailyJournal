@@ -105,3 +105,14 @@ Register-ScheduledTask -TaskName "TradingDailyPipeline" -Action $action -Trigger
 ## Security
 - Never commit `.env` or service account JSON keys.
 - Keep credentials local and rotate keys periodically.
+
+## Dashboard (GitHub Pages)
+- Frontend files are in `dashboard/`.
+- Build/update dashboard data after each extract:
+```powershell
+python scripts/build_dashboard_data.py
+```
+- Dashboard URL (after enabling Pages):
+  - `https://<your-username>.github.io/TradingDailyJournal/dashboard/`
+
+Detailed guide: `docs/step4_dashboard.md`.
