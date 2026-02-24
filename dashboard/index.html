@@ -4,9 +4,9 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Trading Daily Journal Dashboard</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
@@ -14,13 +14,15 @@
     <header class="hero">
       <p class="kicker">Trading Daily Journal</p>
       <h1>Performance Dashboard</h1>
-      <p id="last-updated">Loading data...</p>
+      <p id="last-updated">Loading summary...</p>
     </header>
 
     <section class="kpi-grid">
+      <article class="kpi-card"><h2>Trading PnL</h2><p id="kpi-trade-pnl">-</p></article>
       <article class="kpi-card"><h2>Net PnL</h2><p id="kpi-net">-</p></article>
       <article class="kpi-card"><h2>Total Positions</h2><p id="kpi-positions">-</p></article>
       <article class="kpi-card"><h2>Win Rate</h2><p id="kpi-winrate">-</p></article>
+      <article class="kpi-card"><h2>Gross Profit</h2><p id="kpi-gross-profit">-</p></article>
       <article class="kpi-card"><h2>Gross Loss</h2><p id="kpi-loss">-</p></article>
     </section>
 
@@ -46,8 +48,9 @@
               <th>Deals</th>
               <th>Win</th>
               <th>Loss</th>
+              <th>Trading PnL</th>
+              <th>Cashflow</th>
               <th>Net PnL</th>
-              <th>Withdraw</th>
             </tr>
           </thead>
           <tbody></tbody>
@@ -55,10 +58,12 @@
       </div>
     </section>
 
-    <section class="panel">
+    <section class="panel" id="details-section">
       <div class="panel-head">
         <h2>Trade Details (Cross-check)</h2>
+        <p id="details-status">Loading on demand when this section is visible...</p>
       </div>
+
       <div class="filters">
         <label>Date
           <select id="filter-date"><option value="">All</option></select>
@@ -70,12 +75,14 @@
             <option value="Sell">Sell</option>
             <option value="Deposit">Deposit</option>
             <option value="Withdrawal">Withdrawal</option>
+            <option value="BalanceAdjustment">BalanceAdjustment</option>
           </select>
         </label>
         <label>Symbol
           <input id="filter-symbol" type="text" placeholder="e.g. GOLD" />
         </label>
       </div>
+
       <div class="table-wrap">
         <table id="details-table">
           <thead>
@@ -93,6 +100,12 @@
           </thead>
           <tbody></tbody>
         </table>
+      </div>
+
+      <div class="pagination">
+        <button id="prev-page" type="button">Previous</button>
+        <span id="page-info">Page 0 / 0</span>
+        <button id="next-page" type="button">Next</button>
       </div>
     </section>
   </main>

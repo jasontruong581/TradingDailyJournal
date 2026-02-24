@@ -1,5 +1,9 @@
 ﻿let pnlChart = null;
 let rawEvents = [];
+let filteredEvents = [];
+let rawLoaded = false;
+let currentPage = 1;
+const pageSize = 50;
 
 async function loadCsv(path) {
   const res = await fetch(path, { cache: "no-store" });
@@ -16,7 +20,7 @@ function parseCsv(text) {
     const cols = parseCsvLine(line);
     const row = {};
     headers.forEach((h, i) => {
-      row[h] = cols[i] ?? "";
+      row[h] = (cols[i] ?? "").trim();
     });
     return row;
   });
@@ -47,13 +51,18 @@ function parseCsvLine(line) {
   return out;
 }
 
-function num(v) {
-  const n = Number(v);
+function num(value) {
+  if (value === null || value === undefined) return 0;
+  const cleaned = String(value).replace(/,/g, "").trim();
+  const n = Number(cleaned);
   return Number.isFinite(n) ? n : 0;
 }
 
-function money(v) {
-  return num(v).toLocaleString("en-US", { maximumFractionDigits: 2 });
+function money(value, digits = 2) {
+  return num(value).toLocaleString("en-US", {
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
+  });
 }
 
 function pct(v) {
@@ -67,22 +76,26 @@ function setText(id, value, cls) {
   if (cls) el.classList.add(cls);
 }
 
-function renderKpi(rows) {
-  const totalNet = rows.reduce((acc, r) => acc + num(r.net_profit), 0);
-  const totalPositions = rows.reduce((acc, r) => acc + num(r.total_positions), 0);
-  const totalWins = rows.reduce((acc, r) => acc + num(r.win_positions), 0);
-  const totalLoss = rows.reduce((acc, r) => acc + num(r.loss_positions), 0);
-  const grossLoss = rows.reduce((acc, r) => acc + num(r.gross_loss), 0);
+function renderKpi(summaryRows) {
+  const totalNet = summaryRows.reduce((acc, r) => acc + num(r.net_profit), 0);
+  const totalPositions = summaryRows.reduce((acc, r) => acc + num(r.total_positions), 0);
+  const totalWins = summaryRows.reduce((acc, r) => acc + num(r.win_positions), 0);
+  const totalLoss = summaryRows.reduce((acc, r) => acc + num(r.loss_positions), 0);
+  const grossLoss = summaryRows.reduce((acc, r) => acc + num(r.gross_loss), 0);
+  const grossProfit = summaryRows.reduce((acc, r) => acc + num(r.gross_profit), 0);
 
+  const tradingPnl = grossProfit + grossLoss;
   const wrBase = totalWins + totalLoss;
   const wr = wrBase > 0 ? totalWins / wrBase : 0;
 
-  setText("kpi-net", `$${money(totalNet)}`, totalNet >= 0 ? "pos" : "neg");
+  setText("kpi-trade-pnl", `$${money(tradingPnl, 2)}`, tradingPnl >= 0 ? "pos" : "neg");
+  setText("kpi-net", `$${money(totalNet, 2)}`, totalNet >= 0 ? "pos" : "neg");
   setText("kpi-positions", totalPositions.toLocaleString("en-US"));
   setText("kpi-winrate", pct(wr));
-  setText("kpi-loss", `$${money(grossLoss)}`, "neg");
+  setText("kpi-gross-profit", `$${money(grossProfit, 2)}`, "pos");
+  setText("kpi-loss", `$${money(grossLoss, 2)}`, "neg");
 
-  const latest = rows[rows.length - 1];
+  const latest = summaryRows[summaryRows.length - 1];
   document.getElementById("last-updated").textContent =
     latest ? `Latest trade date: ${latest.trade_date_vn} (VN)` : "No data";
 }
@@ -91,17 +104,20 @@ function renderSummaryTable(rows) {
   const tbody = document.querySelector("#summary-table tbody");
   tbody.innerHTML = "";
 
-  rows.slice().reverse().slice(0, 30).forEach((r) => {
+  rows.slice().reverse().slice(0, 60).forEach((r) => {
     const tr = document.createElement("tr");
     const net = num(r.net_profit);
+    const tradePnl = num(r.gross_profit) + num(r.gross_loss);
+    const cashFlow = num(r.total_deposit) - num(r.total_withdrawal);
     tr.innerHTML = `
       <td>${r.trade_date_vn}</td>
       <td>${num(r.total_positions)}</td>
       <td>${num(r.total_deals)}</td>
       <td>${num(r.win_positions)}</td>
       <td>${num(r.loss_positions)}</td>
+      <td class="${tradePnl >= 0 ? "pos" : "neg"}">$${money(tradePnl)}</td>
+      <td class="${cashFlow >= 0 ? "pos" : "neg"}">$${money(cashFlow)}</td>
       <td class="${net >= 0 ? "pos" : "neg"}">$${money(net)}</td>
-      <td>$${money(r.total_withdrawal)}</td>
     `;
     tbody.appendChild(tr);
   });
@@ -122,10 +138,10 @@ function renderChart(rows) {
         {
           label: "Net Profit",
           data: values,
-          borderColor: "#1f8f54",
-          backgroundColor: "rgba(31, 143, 84, 0.2)",
+          borderColor: "#2e6cff",
+          backgroundColor: "rgba(46, 108, 255, 0.15)",
           fill: true,
-          tension: 0.25,
+          tension: 0.28,
           pointRadius: 2,
         },
       ],
@@ -135,7 +151,7 @@ function renderChart(rows) {
       maintainAspectRatio: true,
       plugins: { legend: { display: false } },
       scales: {
-        y: { grid: { color: "#edf4ee" } },
+        y: { grid: { color: "#eef3fd" } },
         x: { grid: { display: false } },
       },
     },
@@ -158,17 +174,26 @@ function applyDetailsFilter() {
   const action = document.getElementById("filter-action").value;
   const symbol = document.getElementById("filter-symbol").value.trim().toUpperCase();
 
-  let rows = rawEvents;
-  if (date) rows = rows.filter((r) => r.trade_date_vn === date);
-  if (action) rows = rows.filter((r) => r.action === action);
-  if (symbol) rows = rows.filter((r) => (r.symbol || "").toUpperCase().includes(symbol));
+  filteredEvents = rawEvents.filter((r) => {
+    if (date && r.trade_date_vn !== date) return false;
+    if (action && r.action !== action) return false;
+    if (symbol && !(r.symbol || "").toUpperCase().includes(symbol)) return false;
+    return true;
+  });
 
-  renderDetailsTable(rows.slice(0, 500));
+  currentPage = 1;
+  renderDetailsPage();
 }
 
-function renderDetailsTable(rows) {
+function renderDetailsPage() {
   const tbody = document.querySelector("#details-table tbody");
   tbody.innerHTML = "";
+
+  const totalPages = Math.max(1, Math.ceil(filteredEvents.length / pageSize));
+  if (currentPage > totalPages) currentPage = totalPages;
+
+  const start = (currentPage - 1) * pageSize;
+  const rows = filteredEvents.slice(start, start + pageSize);
 
   rows.forEach((r) => {
     const tr = document.createElement("tr");
@@ -182,18 +207,75 @@ function renderDetailsTable(rows) {
       <td>${r.symbol || ""}</td>
       <td>${r.lots || ""}</td>
       <td>${r.close_price || ""}</td>
-      <td class="${p >= 0 ? "pos" : "neg"}">$${money(p)}</td>
+      <td class="${p >= 0 ? "pos" : "neg"}">$${money(p, 2)}</td>
     `;
     tbody.appendChild(tr);
+  });
+
+  document.getElementById("page-info").textContent = `Page ${currentPage} / ${totalPages} (Total ${filteredEvents.length})`;
+  document.getElementById("prev-page").disabled = currentPage <= 1;
+  document.getElementById("next-page").disabled = currentPage >= totalPages;
+}
+
+async function loadDetailsLazy() {
+  if (rawLoaded) return;
+  rawLoaded = true;
+
+  const status = document.getElementById("details-status");
+  status.textContent = "Loading raw trade records...";
+
+  rawEvents = await loadCsv("./data/raw_events_history.csv");
+  filteredEvents = rawEvents;
+  fillDateFilter(rawEvents);
+  renderDetailsPage();
+
+  status.textContent = `Loaded ${rawEvents.length} records (50 per page)`;
+}
+
+function initDetailsLazyLoad() {
+  const target = document.getElementById("details-section");
+  const observer = new IntersectionObserver(
+    async (entries) => {
+      for (const entry of entries) {
+        if (entry.isIntersecting) {
+          observer.disconnect();
+          try {
+            await loadDetailsLazy();
+          } catch (err) {
+            document.getElementById("details-status").textContent = err.message;
+          }
+        }
+      }
+    },
+    { rootMargin: "120px" }
+  );
+  observer.observe(target);
+}
+
+function bindEvents() {
+  ["filter-date", "filter-action", "filter-symbol"].forEach((id) => {
+    document.getElementById(id).addEventListener("input", applyDetailsFilter);
+  });
+
+  document.getElementById("prev-page").addEventListener("click", () => {
+    if (currentPage > 1) {
+      currentPage -= 1;
+      renderDetailsPage();
+    }
+  });
+
+  document.getElementById("next-page").addEventListener("click", () => {
+    const totalPages = Math.max(1, Math.ceil(filteredEvents.length / pageSize));
+    if (currentPage < totalPages) {
+      currentPage += 1;
+      renderDetailsPage();
+    }
   });
 }
 
 async function start() {
   try {
-    const [summaryRows, rawRows] = await Promise.all([
-      loadCsv("./data/daily_summary_history.csv"),
-      loadCsv("./data/raw_events_history.csv"),
-    ]);
+    const summaryRows = await loadCsv("./data/daily_summary_history.csv");
 
     if (!summaryRows.length) {
       document.getElementById("last-updated").textContent = "No summary records yet";
@@ -204,13 +286,8 @@ async function start() {
     renderSummaryTable(summaryRows);
     renderChart(summaryRows);
 
-    rawEvents = rawRows;
-    fillDateFilter(rawRows);
-    renderDetailsTable(rawRows.slice(0, 500));
-
-    ["filter-date", "filter-action", "filter-symbol"].forEach((id) => {
-      document.getElementById(id).addEventListener("input", applyDetailsFilter);
-    });
+    bindEvents();
+    initDetailsLazyLoad();
   } catch (err) {
     document.getElementById("last-updated").textContent = err.message;
   }
