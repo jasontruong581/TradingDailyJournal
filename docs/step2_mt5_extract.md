@@ -65,3 +65,12 @@ python scripts/extract_mt5_events.py --since 2026-02-01T00:00:00Z --until 2026-0
 - Canh bao neu 	otal_positions lech lon hon nguong (--warn-position-delta-ratio, mac dinh 0.5).
 - Neu no event: ghi warning de tranh silent failure.
 
+
+## Multi-account mode (2 accounts)
+- Tao file cau hinh tu mau: state/accounts.example.json.
+- Chay extract voi file account:
+`powershell
+python scripts/extract_mt5_events.py --accounts-file state/accounts.json --day-vn 2026-02-23 --output out/raw_events_2026-02-23.csv --output-format csv
+`
+- event_id se duoc namespace theo account (ccount_id:deal_ticket) de tranh trung giua nhieu account.
+

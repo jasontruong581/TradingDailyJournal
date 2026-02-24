@@ -28,10 +28,17 @@ try {
 
     $day = (Get-Date).AddDays(-1).ToString("yyyy-MM-dd")
     $rawOut = Join-Path $ProjectRoot ("out\raw_events_{0}.csv" -f $day)
+    $accountsFile = Join-Path $ProjectRoot "state\accounts.json"
 
     Write-Log "Start daily pipeline for day=$day"
 
-    & $python "scripts/extract_mt5_events.py" --day-vn $day --output $rawOut --output-format csv
+    if (Test-Path $accountsFile) {
+        Write-Log "Using multi-account config: $accountsFile"
+        & $python "scripts/extract_mt5_events.py" --accounts-file $accountsFile --day-vn $day --output $rawOut --output-format csv
+    }
+    else {
+        & $python "scripts/extract_mt5_events.py" --day-vn $day --output $rawOut --output-format csv
+    }
     if ($LASTEXITCODE -ne 0) { throw "extract_mt5_events failed with exit code $LASTEXITCODE" }
     Write-Log "Extract completed: $rawOut"
 

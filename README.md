@@ -117,3 +117,16 @@ python scripts/build_dashboard_data.py --raw-input out/raw_events_2026-02-23.csv
 
 Detailed guide: `docs/step4_dashboard.md`.
 
+
+## Multi-account collect (trade + cashflow)
+You can extract multiple MT5 accounts in one run using `--accounts-file`.
+
+1. Create `state/accounts.json` from `state/accounts.example.json`.
+2. Run:
+```powershell
+python scripts/extract_mt5_events.py --accounts-file state/accounts.json --day-vn 2026-02-23 --output out/raw_events_2026-02-23.csv --output-format csv
+```
+
+Notes:
+- `event_id` is namespaced as `account_id:deal_ticket` to avoid collisions across accounts.
+- `tasks/run_daily_pipeline.ps1` auto-detects `state/accounts.json` and uses multi-account mode automatically.

@@ -70,6 +70,7 @@ class RawEvent:
     magic_number: str | None
     duration_sec: int | None
     account_id: str
+    account_label: str
     account_currency: str
     open_time_xm: str | None
     close_time_xm: str | None
@@ -108,9 +109,19 @@ class DailySummary:
     updated_at_utc: str
 
 
+@dataclass
+class AccountConfig:
+    login: int
+    password: str
+    server: str
+    path: str | None
+    label: str
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Extract MT5 deals to normalized raw_events")
     parser.add_argument("--state-file", default="state/mt5_sync_state.json")
+    parser.add_argument("--accounts-file", default="")
     parser.add_argument("--output", default="out/raw_events_latest.jsonl")
     parser.add_argument("--output-format", choices=["jsonl", "csv"], default="jsonl")
     parser.add_argument("--summary-output", default="out/daily_summary_latest.csv")
@@ -176,24 +187,58 @@ def getenv_required(name: str) -> str:
     return value
 
 
-def init_mt5() -> tuple[str, str]:
-    login = int(getenv_required("MT5_LOGIN"))
-    password = getenv_required("MT5_PASSWORD")
-    server = getenv_required("MT5_SERVER")
-    terminal_path = os.getenv("MT5_PATH")
-
-    ok = mt5.initialize(path=terminal_path, login=login, password=password, server=server)
+def init_mt5(account: AccountConfig) -> tuple[str, str]:
+    ok = mt5.initialize(path=account.path, login=account.login, password=account.password, server=account.server)
     if not ok:
         code, message = mt5.last_error()
-        raise SystemExit(f"MT5 initialize failed: {code} - {message}")
+        raise SystemExit(f"MT5 initialize failed for {account.label}: {code} - {message}")
 
     account_info = mt5.account_info()
     if account_info is None:
         code, message = mt5.last_error()
         mt5.shutdown()
-        raise SystemExit(f"MT5 account_info failed: {code} - {message}")
+        raise SystemExit(f"MT5 account_info failed for {account.label}: {code} - {message}")
 
     return str(account_info.login), account_info.currency
+
+
+def load_accounts(args: argparse.Namespace) -> list[AccountConfig]:
+    if args.accounts_file:
+        path = Path(args.accounts_file)
+        if not path.exists():
+            raise SystemExit(f"Accounts file not found: {path}")
+        payload = json.loads(path.read_text(encoding="utf-8-sig"))
+        raw_accounts = payload.get("accounts", [])
+        if not raw_accounts:
+            raise SystemExit(f"No accounts found in: {path}")
+        accounts: list[AccountConfig] = []
+        for idx, item in enumerate(raw_accounts):
+            login = int(item["login"])
+            password = str(item["password"])
+            server = str(item["server"])
+            label = str(item.get("label") or f"acct_{login}")
+            mt5_path = item.get("path")
+            accounts.append(
+                AccountConfig(
+                    login=login,
+                    password=password,
+                    server=server,
+                    path=str(mt5_path) if mt5_path else None,
+                    label=label,
+                )
+            )
+        return accounts
+
+    # Backward-compatible single account mode from .env
+    return [
+        AccountConfig(
+            login=int(getenv_required("MT5_LOGIN")),
+            password=getenv_required("MT5_PASSWORD"),
+            server=getenv_required("MT5_SERVER"),
+            path=os.getenv("MT5_PATH"),
+            label=os.getenv("MT5_ACCOUNT_LABEL", "main"),
+        )
+    ]
 
 
 def setup_logging(log_file: Path) -> None:
@@ -252,6 +297,7 @@ def calc_source_hash(payload: dict[str, Any]) -> str:
 def normalize_deal(
     deal: Any,
     account_id: str,
+    account_label: str,
     account_currency: str,
     etl_run_id: str,
     synced_at_utc: str,
@@ -268,7 +314,7 @@ def normalize_deal(
     open_time_vn = xm_iso_to_vn_iso(open_time_xm)
 
     business_fields = {
-        "event_id": str(getattr(deal, "ticket", "")),
+        "event_id": f"{account_id}:{getattr(deal, 'ticket', '')}",
         "ticket": str(getattr(deal, "order", getattr(deal, "ticket", ""))),
         "position_id": str(getattr(deal, "position_id", "")) or None,
         "event_type": event_type,
@@ -287,6 +333,7 @@ def normalize_deal(
         "magic_number": str(getattr(deal, "magic", "")) or None,
         "duration_sec": None,
         "account_id": account_id,
+        "account_label": account_label,
         "account_currency": account_currency,
         "open_time_xm": open_time_xm,
         "close_time_xm": close_time_xm,
@@ -380,7 +427,8 @@ def build_daily_summaries(events: list[RawEvent], updated_at_utc: str) -> list[D
         pnl_by_position: dict[str, float] = {}
         for e in trade_events:
             if e.position_id:
-                pnl_by_position[e.position_id] = pnl_by_position.get(e.position_id, 0.0) + e.profit
+                position_key = f"{e.account_id}:{e.position_id}"
+                pnl_by_position[position_key] = pnl_by_position.get(position_key, 0.0) + e.profit
 
         win_positions = sum(1 for v in pnl_by_position.values() if v > 0)
         loss_positions = sum(1 for v in pnl_by_position.values() if v < 0)
@@ -497,24 +545,33 @@ def main() -> int:
     since_utc, until_utc = resolve_window(args, state)
     logging.info("Run window: since_utc=%s until_utc=%s", format_iso_utc(since_utc), format_iso_utc(until_utc))
 
-    account_id, account_currency = init_mt5()
-    health_check_preflight(account_id, account_currency)
-
     etl_run_id = str(uuid.uuid4())
     synced_at_utc = format_iso_utc(datetime.now(tz=UTC))
+    accounts = load_accounts(args)
+    logging.info("Accounts configured: %s", ", ".join([a.label for a in accounts]))
 
-    deals = list(get_deals(since_utc, until_utc))
-    logging.info("Fetched deals: %s", len(deals))
-    events = [
-        normalize_deal(
-            deal=deal,
-            account_id=account_id,
-            account_currency=account_currency,
-            etl_run_id=etl_run_id,
-            synced_at_utc=synced_at_utc,
+    events: list[RawEvent] = []
+    for account in accounts:
+        account_id, account_currency = init_mt5(account)
+        health_check_preflight(account_id, account_currency)
+        deals = list(get_deals(since_utc, until_utc))
+        logging.info("Fetched deals: account=%s count=%s", account.label, len(deals))
+        events.extend(
+            [
+                normalize_deal(
+                    deal=deal,
+                    account_id=account_id,
+                    account_label=account.label,
+                    account_currency=account_currency,
+                    etl_run_id=etl_run_id,
+                    synced_at_utc=synced_at_utc,
+                )
+                for deal in deals
+            ]
         )
-        for deal in deals
-    ]
+        mt5.shutdown()
+
+    logging.info("Fetched deals total across accounts: %s", len(events))
 
     if args.output_format == "jsonl":
         write_jsonl(output_path, events)
@@ -549,7 +606,6 @@ def main() -> int:
         )
     )
 
-    mt5.shutdown()
     return 0
 
 
