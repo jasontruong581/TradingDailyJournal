@@ -1,11 +1,16 @@
 ﻿let pnlChart = null;
 let summaryAll = [];
 let rawEvents = [];
+let groupedPositions = [];
 let filteredEvents = [];
+let filteredPositions = [];
 let rawLoaded = false;
 let currentPage = 1;
+let currentView = "event";
 let sortKey = "close_time_vn";
 let sortDir = "desc";
+let posSortKey = "exit_time_vn";
+let posSortDir = "desc";
 const pageSize = 50;
 
 function ts(value) {
@@ -39,8 +44,7 @@ function parseCsvLine(line) {
     const ch = line[i];
     const next = line[i + 1];
     if (ch === '"') {
-      if (inQuotes && next === '"') { cur += '"'; i += 1; }
-      else inQuotes = !inQuotes;
+      if (inQuotes && next === '"') { cur += '"'; i += 1; } else inQuotes = !inQuotes;
     } else if (ch === "," && !inQuotes) {
       out.push(cur); cur = "";
     } else cur += ch;
@@ -50,8 +54,7 @@ function parseCsvLine(line) {
 }
 
 function num(value) {
-  const cleaned = String(value ?? "").replace(/,/g, "").trim();
-  const n = Number(cleaned);
+  const n = Number(String(value ?? "").replace(/,/g, "").trim());
   return Number.isFinite(n) ? n : 0;
 }
 
@@ -165,6 +168,34 @@ function enrichEventsWithPositionStats(rows) {
   return rows;
 }
 
+function buildGroupedPositions(rows) {
+  const groups = new Map();
+  rows.filter((r) => (r.event_type || "") === "trade" && (r.position_id || "")).forEach((r) => {
+    const key = `${r.account_id || ""}|${r.position_id}`;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(r);
+  });
+
+  return Array.from(groups.values()).map((events) => {
+    const sorted = [...events].sort((a, b) => ts(a.close_time_vn) - ts(b.close_time_vn));
+    const first = sorted[0];
+    const last = sorted[sorted.length - 1];
+    return {
+      trade_date_vn: last.trade_date_vn || first.trade_date_vn || "",
+      account_id: first.account_id || "",
+      position_id: first.position_id || "",
+      symbol: first.symbol || "",
+      entry_time_vn: first.close_time_vn || "",
+      exit_time_vn: last.close_time_vn || "",
+      entry_price: first.close_price || "",
+      exit_price: last.close_price || "",
+      lots: first.lots || "",
+      deals_count: String(sorted.length),
+      position_pnl: String(sorted.reduce((acc, x) => acc + num(x.profit), 0)),
+    };
+  });
+}
+
 function fillDateFilter(rows) {
   const dateSelect = document.getElementById("filter-date");
   dateSelect.innerHTML = '<option value="">All</option>';
@@ -176,18 +207,16 @@ function fillDateFilter(rows) {
   });
 }
 
-function sortDetails(rows) {
+function sortRows(rows, key, dir, numericKeys = []) {
   const sorted = [...rows];
   sorted.sort((a, b) => {
-    const va = a[sortKey] ?? "";
-    const vb = b[sortKey] ?? "";
-    const na = num(va), nb = num(vb);
-    const bothNum = !(Number.isNaN(na) || Number.isNaN(nb)) && (String(va).trim() !== "" || String(vb).trim() !== "");
+    const va = a[key] ?? "";
+    const vb = b[key] ?? "";
     let cmp = 0;
-    if (sortKey.includes("time") || sortKey.includes("date")) cmp = ts(va) - ts(vb);
-    else if (bothNum && ["lots", "close_price", "position_pnl", "profit", "event_id"].includes(sortKey)) cmp = na - nb;
+    if (key.includes("time") || key.includes("date")) cmp = ts(va) - ts(vb);
+    else if (numericKeys.includes(key)) cmp = num(va) - num(vb);
     else cmp = String(va).localeCompare(String(vb));
-    return sortDir === "asc" ? cmp : -cmp;
+    return dir === "asc" ? cmp : -cmp;
   });
   return sorted;
 }
@@ -200,26 +229,33 @@ function applyDetailsFilter() {
   const symbol = document.getElementById("filter-symbol").value.trim().toUpperCase();
 
   filteredEvents = rawEvents.filter((r) => {
-    if (from || to) if (!inRange(r.trade_date_vn, from, to)) return false;
+    if ((from || to) && !inRange(r.trade_date_vn, from, to)) return false;
     if (date && r.trade_date_vn !== date) return false;
     if (action && r.action !== action) return false;
     if (symbol && !(r.symbol || "").toUpperCase().includes(symbol)) return false;
     return true;
   });
+  filteredEvents = sortRows(filteredEvents, sortKey, sortDir, ["lots", "close_price", "position_pnl", "profit", "event_id"]);
 
-  filteredEvents = sortDetails(filteredEvents);
+  filteredPositions = groupedPositions.filter((r) => {
+    if ((from || to) && !inRange(r.trade_date_vn, from, to)) return false;
+    if (date && r.trade_date_vn !== date) return false;
+    if (symbol && !(r.symbol || "").toUpperCase().includes(symbol)) return false;
+    return true;
+  });
+  filteredPositions = sortRows(filteredPositions, posSortKey, posSortDir, ["entry_price", "exit_price", "lots", "deals_count", "position_pnl"]);
+
   currentPage = 1;
-  renderDetailsPage();
+  renderCurrentView();
 }
 
-function renderDetailsPage() {
+function renderEventPage() {
   const tbody = document.querySelector("#details-table tbody");
   tbody.innerHTML = "";
   const totalPages = Math.max(1, Math.ceil(filteredEvents.length / pageSize));
   if (currentPage > totalPages) currentPage = totalPages;
 
-  const rows = filteredEvents.slice((currentPage - 1) * pageSize, currentPage * pageSize);
-  rows.forEach((r) => {
+  filteredEvents.slice((currentPage - 1) * pageSize, currentPage * pageSize).forEach((r) => {
     const dealProfit = num(r.profit);
     const posPnl = num(r.position_pnl);
     const tr = document.createElement("tr");
@@ -238,7 +274,50 @@ function renderDetailsPage() {
     tbody.appendChild(tr);
   });
 
-  document.getElementById("page-info").textContent = `Page ${currentPage} / ${totalPages} (Total ${filteredEvents.length})`;
+  document.getElementById("page-info").textContent = `Page ${currentPage} / ${totalPages} (Total ${filteredEvents.length} events)`;
+}
+
+function renderPositionPage() {
+  const tbody = document.querySelector("#positions-table tbody");
+  tbody.innerHTML = "";
+  const totalPages = Math.max(1, Math.ceil(filteredPositions.length / pageSize));
+  if (currentPage > totalPages) currentPage = totalPages;
+
+  filteredPositions.slice((currentPage - 1) * pageSize, currentPage * pageSize).forEach((r) => {
+    const pnl = num(r.position_pnl);
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${r.trade_date_vn}</td>
+      <td>${r.account_id}</td>
+      <td>${r.position_id}</td>
+      <td>${r.symbol}</td>
+      <td>${r.entry_time_vn}</td>
+      <td>${r.exit_time_vn}</td>
+      <td>${r.entry_price}</td>
+      <td>${r.exit_price}</td>
+      <td>${r.lots}</td>
+      <td>${r.deals_count}</td>
+      <td class="${pnl >= 0 ? "pos" : "neg"}">$${money(pnl)}</td>`;
+    tbody.appendChild(tr);
+  });
+
+  document.getElementById("page-info").textContent = `Page ${currentPage} / ${totalPages} (Total ${filteredPositions.length} positions)`;
+}
+
+function renderCurrentView() {
+  const detailsTable = document.getElementById("details-table");
+  const positionsTable = document.getElementById("positions-table");
+  if (currentView === "event") {
+    detailsTable.classList.remove("hidden");
+    positionsTable.classList.add("hidden");
+    renderEventPage();
+  } else {
+    positionsTable.classList.remove("hidden");
+    detailsTable.classList.add("hidden");
+    renderPositionPage();
+  }
+
+  const totalPages = Math.max(1, Math.ceil((currentView === "event" ? filteredEvents.length : filteredPositions.length) / pageSize));
   document.getElementById("prev-page").disabled = currentPage <= 1;
   document.getElementById("next-page").disabled = currentPage >= totalPages;
 }
@@ -248,11 +327,13 @@ async function loadDetailsLazy() {
   rawLoaded = true;
   const status = document.getElementById("details-status");
   status.textContent = "Loading raw trade records...";
+
   rawEvents = enrichEventsWithPositionStats(await loadCsv("./data/raw_events_history.csv"));
+  groupedPositions = buildGroupedPositions(rawEvents);
   fillDateFilter(rawEvents);
-  filteredEvents = sortDetails(rawEvents);
-  renderDetailsPage();
-  status.textContent = `Loaded ${rawEvents.length} records (50 per page)`;
+  applyDetailsFilter();
+
+  status.textContent = `Loaded ${rawEvents.length} events / ${groupedPositions.length} positions (50 per page)`;
 }
 
 function initDetailsLazyLoad() {
@@ -271,9 +352,8 @@ function initDetailsLazyLoad() {
 function bindEvents() {
   document.getElementById("summary-from").addEventListener("input", applySummaryFilter);
   document.getElementById("summary-to").addEventListener("input", applySummaryFilter);
-
   ["details-from", "details-to", "filter-date", "filter-action", "filter-symbol"].forEach((id) => {
-    document.getElementById(id).addEventListener("input", applyDetailsFilter);
+    document.getElementById(id).addEventListener("input", () => rawLoaded && applyDetailsFilter());
   });
 
   document.querySelectorAll("#details-table thead th[data-sort]").forEach((th) => {
@@ -281,14 +361,38 @@ function bindEvents() {
       const key = th.dataset.sort;
       if (sortKey === key) sortDir = sortDir === "asc" ? "desc" : "asc";
       else { sortKey = key; sortDir = "asc"; }
-      applyDetailsFilter();
+      rawLoaded && applyDetailsFilter();
+    });
+  });
+  document.querySelectorAll("#positions-table thead th[data-psort]").forEach((th) => {
+    th.addEventListener("click", () => {
+      const key = th.dataset.psort;
+      if (posSortKey === key) posSortDir = posSortDir === "asc" ? "desc" : "asc";
+      else { posSortKey = key; posSortDir = "asc"; }
+      rawLoaded && applyDetailsFilter();
     });
   });
 
-  document.getElementById("prev-page").addEventListener("click", () => { if (currentPage > 1) { currentPage -= 1; renderDetailsPage(); } });
+  document.getElementById("prev-page").addEventListener("click", () => { if (currentPage > 1) { currentPage -= 1; renderCurrentView(); } });
   document.getElementById("next-page").addEventListener("click", () => {
-    const totalPages = Math.max(1, Math.ceil(filteredEvents.length / pageSize));
-    if (currentPage < totalPages) { currentPage += 1; renderDetailsPage(); }
+    const total = currentView === "event" ? filteredEvents.length : filteredPositions.length;
+    const totalPages = Math.max(1, Math.ceil(total / pageSize));
+    if (currentPage < totalPages) { currentPage += 1; renderCurrentView(); }
+  });
+
+  document.getElementById("view-event").addEventListener("click", () => {
+    currentView = "event";
+    document.getElementById("view-event").classList.add("active");
+    document.getElementById("view-position").classList.remove("active");
+    currentPage = 1;
+    if (rawLoaded) renderCurrentView();
+  });
+  document.getElementById("view-position").addEventListener("click", () => {
+    currentView = "position";
+    document.getElementById("view-position").classList.add("active");
+    document.getElementById("view-event").classList.remove("active");
+    currentPage = 1;
+    if (rawLoaded) renderCurrentView();
   });
 
   document.getElementById("theme-toggle").addEventListener("click", () => {

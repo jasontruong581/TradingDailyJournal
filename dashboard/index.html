@@ -76,6 +76,10 @@
         <h2>Trade Details (Cross-check)</h2>
         <p id="details-status">Loading on demand when this section is visible...</p>
       </div>
+      <div class="view-switch">
+        <button id="view-event" type="button" class="active">Event View</button>
+        <button id="view-position" type="button">Position View</button>
+      </div>
 
       <div class="filters">
         <label>From
@@ -103,7 +107,7 @@
       </div>
 
       <div class="table-wrap">
-        <table id="details-table">
+        <table id="details-table" class="details-table">
           <thead>
             <tr>
               <th data-sort="trade_date_vn">Date</th>
@@ -117,6 +121,24 @@
               <th data-sort="close_price">Price</th>
               <th data-sort="position_pnl">Position PnL</th>
               <th data-sort="profit">Profit</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+        <table id="positions-table" class="details-table hidden">
+          <thead>
+            <tr>
+              <th data-psort="trade_date_vn">Date</th>
+              <th data-psort="account_id">Account</th>
+              <th data-psort="position_id">Position ID</th>
+              <th data-psort="symbol">Symbol</th>
+              <th data-psort="entry_time_vn">Entry Time</th>
+              <th data-psort="exit_time_vn">Exit Time</th>
+              <th data-psort="entry_price">Entry Price</th>
+              <th data-psort="exit_price">Exit Price</th>
+              <th data-psort="lots">Lots</th>
+              <th data-psort="deals_count">Deals</th>
+              <th data-psort="position_pnl">Position PnL</th>
             </tr>
           </thead>
           <tbody></tbody>

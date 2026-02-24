@@ -56,6 +56,9 @@ body {
 .chart-wrap canvas { width: 100% !important; height: 100% !important; display: block; }
 
 .filters { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 10px; }
+.view-switch { display: flex; gap: 8px; margin-bottom: 10px; }
+.view-switch button { border: 1px solid var(--line); border-radius: 10px; padding: 7px 12px; background: var(--panel); color: var(--text); font: inherit; font-weight: 700; cursor: pointer; }
+.view-switch button.active { background: var(--brand); color: #fff; border-color: var(--brand); }
 .filters label { display: grid; gap: 4px; color: var(--muted); font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; }
 .filters input, .filters select, .pagination button {
   border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; font: inherit;
@@ -67,6 +70,8 @@ table { width: 100%; border-collapse: collapse; }
 th, td { padding: 10px; border-bottom: 1px solid var(--line); text-align: left; white-space: nowrap; }
 th { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
 #details-table thead th[data-sort] { cursor: pointer; }
+#positions-table thead th[data-psort] { cursor: pointer; }
+.hidden { display: none; }
 
 .pagination { display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin-top: 10px; }
 .pagination button { cursor: pointer; font-weight: 700; }
