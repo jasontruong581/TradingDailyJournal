@@ -64,9 +64,9 @@ function money(value, digits = 2) {
 
 function hhmmss(isoString) {
   if (!isoString) return "";
-  const d = new Date(isoString);
-  if (Number.isNaN(d.getTime())) return "";
-  return d.toLocaleTimeString("en-GB", { hour12: false });
+  const m = String(isoString).match(/T(\d{2}:\d{2}:\d{2})/);
+  if (m && m[1]) return m[1];
+  return String(isoString);
 }
 
 function pct(v) { return `${(v * 100).toFixed(1)}%`; }
@@ -268,7 +268,7 @@ function renderEventPage() {
     const tr = document.createElement("tr");
     tr.innerHTML = `
       <td>${r.trade_date_vn || ""}</td>
-      <td>${r.close_time_vn || ""}</td>
+      <td>${hhmmss(r.close_time_vn)}</td>
       <td>${r.event_id || ""}</td>
       <td>${r.position_id || ""}</td>
       <td>${r.deal_role || ""}</td>
