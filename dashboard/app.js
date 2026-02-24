@@ -5,6 +5,11 @@ let rawLoaded = false;
 let currentPage = 1;
 const pageSize = 50;
 
+function ts(value) {
+  const n = Date.parse(value || "");
+  return Number.isFinite(n) ? n : 0;
+}
+
 async function loadCsv(path) {
   const res = await fetch(path, { cache: "no-store" });
   if (!res.ok) throw new Error(`Failed to load ${path}`);
@@ -185,6 +190,38 @@ function applyDetailsFilter() {
   renderDetailsPage();
 }
 
+function enrichEventsWithPositionStats(rows) {
+  const byPosition = new Map();
+  rows.forEach((row) => {
+    const key = (row.position_id || "").trim();
+    if (!key) return;
+    if (!byPosition.has(key)) byPosition.set(key, []);
+    byPosition.get(key).push(row);
+  });
+
+  byPosition.forEach((events, positionId) => {
+    events.sort((a, b) => ts(a.close_time_vn) - ts(b.close_time_vn));
+    const totalPnl = events.reduce((acc, e) => acc + num(e.profit), 0);
+    const lastIndex = events.length - 1;
+    events.forEach((e, idx) => {
+      let role = "adjustment";
+      if (events.length === 1) role = "single";
+      else if (idx === 0) role = "entry";
+      else if (idx === lastIndex) role = "exit";
+      e.deal_role = role;
+      e.position_pnl = String(totalPnl);
+      e.position_id = positionId;
+    });
+  });
+
+  rows.forEach((row) => {
+    if (!row.deal_role) row.deal_role = "n/a";
+    if (!row.position_pnl) row.position_pnl = row.profit || "0";
+  });
+
+  return rows;
+}
+
 function renderDetailsPage() {
   const tbody = document.querySelector("#details-table tbody");
   tbody.innerHTML = "";
@@ -198,15 +235,18 @@ function renderDetailsPage() {
   rows.forEach((r) => {
     const tr = document.createElement("tr");
     const p = num(r.profit);
+    const posPnl = num(r.position_pnl);
     tr.innerHTML = `
       <td>${r.trade_date_vn || ""}</td>
       <td>${r.close_time_vn || ""}</td>
       <td>${r.event_id || ""}</td>
       <td>${r.position_id || ""}</td>
+      <td>${r.deal_role || ""}</td>
       <td>${r.action || ""}</td>
       <td>${r.symbol || ""}</td>
       <td>${r.lots || ""}</td>
       <td>${r.close_price || ""}</td>
+      <td class="${posPnl >= 0 ? "pos" : "neg"}">$${money(posPnl, 2)}</td>
       <td class="${p >= 0 ? "pos" : "neg"}">$${money(p, 2)}</td>
     `;
     tbody.appendChild(tr);
@@ -224,7 +264,7 @@ async function loadDetailsLazy() {
   const status = document.getElementById("details-status");
   status.textContent = "Loading raw trade records...";
 
-  rawEvents = await loadCsv("./data/raw_events_history.csv");
+  rawEvents = enrichEventsWithPositionStats(await loadCsv("./data/raw_events_history.csv"));
   filteredEvents = rawEvents;
   fillDateFilter(rawEvents);
   renderDetailsPage();
