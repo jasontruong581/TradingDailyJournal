@@ -1,0 +1,18 @@
+﻿{
+  "accounts": [
+    {
+      "label": "trade",
+      "login": 11111111,
+      "password": "your_trade_password",
+      "server": "XMGlobal-MT5 7",
+      "path": "C:\\Program Files\\MetaTrader 5\\terminal64.exe"
+    },
+    {
+      "label": "cashflow",
+      "login": 22222222,
+      "password": "your_cashflow_password",
+      "server": "XMGlobal-MT5 7",
+      "path": "C:\\Program Files\\MetaTrader 5\\terminal64.exe"
+    }
+  ]
+}

@@ -12,6 +12,7 @@ venv/
 *.json
 !*.ipynb
 !.vscode/*.json
+!docs/*.json
 
 # Project secrets allowlist example files
 !.env.example
