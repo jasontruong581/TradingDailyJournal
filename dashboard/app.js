@@ -6,7 +6,7 @@ let filteredEvents = [];
 let filteredPositions = [];
 let rawLoaded = false;
 let currentPage = 1;
-let currentView = "event";
+let currentView = "position";
 let sortKey = "close_time_vn";
 let sortDir = "desc";
 let posSortKey = "exit_time_vn";
@@ -411,6 +411,16 @@ function bindEvents() {
   });
 }
 
+function initDefaultViewButtons() {
+  if (currentView === "position") {
+    document.getElementById("view-position").classList.add("active");
+    document.getElementById("view-event").classList.remove("active");
+  } else {
+    document.getElementById("view-event").classList.add("active");
+    document.getElementById("view-position").classList.remove("active");
+  }
+}
+
 function initTheme() {
   const saved = localStorage.getItem("dash-theme") || "light";
   document.body.setAttribute("data-theme", saved);
@@ -421,6 +431,7 @@ async function start() {
   try {
     initTheme();
     bindEvents();
+    initDefaultViewButtons();
     summaryAll = await loadCsv("./data/daily_summary_history.csv");
     applySummaryFilter();
     initDetailsLazyLoad();
