@@ -110,9 +110,10 @@ Register-ScheduledTask -TaskName "TradingDailyPipeline" -Action $action -Trigger
 - Frontend files are in `dashboard/`.
 - Build/update dashboard data after each extract:
 ```powershell
-python scripts/build_dashboard_data.py
+python scripts/build_dashboard_data.py --raw-input out/raw_events_2026-02-23.csv
 ```
 - Dashboard URL (after enabling Pages):
   - `https://<your-username>.github.io/TradingDailyJournal/dashboard/`
 
 Detailed guide: `docs/step4_dashboard.md`.
+

@@ -10,7 +10,7 @@
 ## Update dashboard data
 Sau khi pipeline extract xong:
 ```powershell
-python scripts/build_dashboard_data.py
+python scripts/build_dashboard_data.py --raw-input out/raw_events_2026-02-23.csv
 ```
 
 Script se merge vao `dashboard/data/daily_summary_history.csv` theo key `trade_date_vn` (dedup theo ngay).
@@ -27,3 +27,4 @@ python -m http.server 8080
 2. Chon `Deploy from a branch`.
 3. Branch: `main`, Folder: `/ (root)`.
 4. URL dashboard: `https://<your-username>.github.io/TradingDailyJournal/dashboard/`.
+

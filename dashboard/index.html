@@ -35,7 +35,7 @@
 
     <section class="panel">
       <div class="panel-head">
-        <h2>Recent Days</h2>
+        <h2>Daily Summary</h2>
       </div>
       <div class="table-wrap">
         <table id="summary-table">
@@ -48,6 +48,47 @@
               <th>Loss</th>
               <th>Net PnL</th>
               <th>Withdraw</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <h2>Trade Details (Cross-check)</h2>
+      </div>
+      <div class="filters">
+        <label>Date
+          <select id="filter-date"><option value="">All</option></select>
+        </label>
+        <label>Action
+          <select id="filter-action">
+            <option value="">All</option>
+            <option value="Buy">Buy</option>
+            <option value="Sell">Sell</option>
+            <option value="Deposit">Deposit</option>
+            <option value="Withdrawal">Withdrawal</option>
+          </select>
+        </label>
+        <label>Symbol
+          <input id="filter-symbol" type="text" placeholder="e.g. GOLD" />
+        </label>
+      </div>
+      <div class="table-wrap">
+        <table id="details-table">
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Close Time (VN)</th>
+              <th>Event ID</th>
+              <th>Position ID</th>
+              <th>Action</th>
+              <th>Symbol</th>
+              <th>Lots</th>
+              <th>Price</th>
+              <th>Profit</th>
             </tr>
           </thead>
           <tbody></tbody>
