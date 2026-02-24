@@ -1,4 +1,6 @@
-﻿async function loadCsv(path) {
+﻿let pnlChart = null;
+
+async function loadCsv(path) {
   const res = await fetch(path, { cache: "no-store" });
   if (!res.ok) throw new Error(`Failed to load ${path}`);
   const text = await res.text();
@@ -83,7 +85,11 @@ function renderChart(rows) {
   const labels = rows.map((r) => r.trade_date_vn);
   const values = rows.map((r) => num(r.net_profit));
 
-  new Chart(ctx, {
+  if (pnlChart) {
+    pnlChart.destroy();
+  }
+
+  pnlChart = new Chart(ctx, {
     type: "line",
     data: {
       labels,
@@ -101,7 +107,7 @@ function renderChart(rows) {
     },
     options: {
       responsive: true,
-      maintainAspectRatio: false,
+      maintainAspectRatio: true,
       plugins: { legend: { display: false } },
       scales: {
         y: { grid: { color: "#edf4ee" } },
