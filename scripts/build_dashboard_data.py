@@ -54,11 +54,15 @@ def merge_rows(
     reverse: bool = False,
 ) -> tuple[list[str], list[dict[str, str]]]:
     merged: dict[str, dict[str, str]] = {}
-    headers = new_headers
+    headers = list(new_headers)
 
     if existing_path.exists():
         old_headers, old_rows = read_csv(existing_path)
-        headers = old_headers
+        # Keep schema evolution safe: preserve old headers and append new ones.
+        headers = list(old_headers)
+        for h in new_headers:
+            if h not in headers:
+                headers.append(h)
         for row in old_rows:
             k = row.get(key)
             if k:
@@ -67,7 +71,10 @@ def merge_rows(
     for row in new_rows:
         k = row.get(key)
         if k:
-            merged[k] = row
+            if headers:
+                merged[k] = {h: row.get(h, merged.get(k, {}).get(h, "")) for h in headers}
+            else:
+                merged[k] = row
 
     out_rows = sorted(merged.values(), key=lambda r: r.get(sort_key, ""), reverse=reverse)
     return headers, out_rows
