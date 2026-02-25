@@ -13,6 +13,12 @@ let sortDir = "desc";
 let posSortKey = "exit_time_vn";
 let posSortDir = "desc";
 const pageSize = 50;
+const API_BASE = (
+  window.__DASHBOARD_API_BASE__ ||
+  localStorage.getItem("dashboard_api_base") ||
+  ""
+).replace(/\/+$/, "");
+const API_TOKEN = window.__DASHBOARD_API_TOKEN__ || localStorage.getItem("dashboard_api_token") || "";
 
 function ts(value) {
   const n = Date.parse(value || "");
@@ -23,6 +29,33 @@ async function loadCsv(path) {
   const res = await fetch(path, { cache: "no-store" });
   if (!res.ok) throw new Error(`Failed to load ${path}`);
   return parseCsv(await res.text());
+}
+
+async function loadApiRows(path) {
+  if (!API_BASE) throw new Error("API not configured");
+  const headers = {};
+  if (API_TOKEN) headers.Authorization = `Bearer ${API_TOKEN}`;
+  const res = await fetch(`${API_BASE}${path}`, { cache: "no-store", headers });
+  if (!res.ok) throw new Error(`Failed API ${path}: ${res.status}`);
+  const body = await res.json();
+  if (!body || !Array.isArray(body.rows)) throw new Error(`Invalid API response: ${path}`);
+  return body.rows;
+}
+
+async function loadSummaryRows() {
+  try {
+    return await loadApiRows("/api/summary");
+  } catch {
+    return await loadCsv("./data/daily_summary_history.csv");
+  }
+}
+
+async function loadRawRows() {
+  try {
+    return await loadApiRows("/api/raw-events");
+  } catch {
+    return await loadCsv("./data/raw_events_history.csv");
+  }
 }
 
 function parseCsv(text) {
@@ -672,7 +705,7 @@ function hydrateRawData(rows) {
 async function loadRawForAnalytics() {
   if (rawAnalyticsLoaded) return;
   try {
-    const rows = await loadCsv("./data/raw_events_history.csv");
+    const rows = await loadRawRows();
     hydrateRawData(rows);
   } catch {
     // keep dashboard running with summary-only analytics
@@ -684,7 +717,7 @@ async function loadDetailsLazy() {
   const status = document.getElementById("details-status");
   status.textContent = "Loading raw trade records...";
   try {
-    const rows = await loadCsv("./data/raw_events_history.csv");
+    const rows = await loadRawRows();
     hydrateRawData(rows);
   } catch (err) {
     status.textContent = err.message;
@@ -801,7 +834,7 @@ async function start() {
     bindEvents();
     initDefaultViewButtons();
 
-    summaryAll = await loadCsv("./data/daily_summary_history.csv");
+    summaryAll = await loadSummaryRows();
     applySummaryFilter();
 
     loadRawForAnalytics();
