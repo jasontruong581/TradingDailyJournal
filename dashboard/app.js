@@ -35,7 +35,11 @@ async function loadApiRows(path) {
   if (!API_BASE) throw new Error("API not configured");
   const headers = {};
   if (API_TOKEN) headers.Authorization = `Bearer ${API_TOKEN}`;
-  const res = await fetch(`${API_BASE}${path}`, { cache: "no-store", headers });
+  const res = await fetch(`${API_BASE}${path}`, {
+    cache: "no-store",
+    headers,
+    credentials: "include",
+  });
   if (!res.ok) throw new Error(`Failed API ${path}: ${res.status}`);
   const body = await res.json();
   if (!body || !Array.isArray(body.rows)) throw new Error(`Invalid API response: ${path}`);
