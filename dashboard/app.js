@@ -43,19 +43,13 @@ async function loadApiRows(path) {
 }
 
 async function loadSummaryRows() {
-  try {
-    return await loadApiRows("/api/summary");
-  } catch {
-    return await loadCsv("./data/daily_summary_history.csv");
-  }
+  if (API_BASE) return await loadApiRows("/api/summary");
+  return await loadCsv("./data/daily_summary_history.csv");
 }
 
 async function loadRawRows() {
-  try {
-    return await loadApiRows("/api/raw-events");
-  } catch {
-    return await loadCsv("./data/raw_events_history.csv");
-  }
+  if (API_BASE) return await loadApiRows("/api/raw-events");
+  return await loadCsv("./data/raw_events_history.csv");
 }
 
 function parseCsv(text) {

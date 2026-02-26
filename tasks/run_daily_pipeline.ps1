@@ -22,9 +22,18 @@ function Write-Log {
 
 function Load-RunnerState {
     if (Test-Path $stateFile) {
-        return Get-Content $stateFile -Raw | ConvertFrom-Json
+        $s = Get-Content $stateFile -Raw | ConvertFrom-Json
+        if (-not ($s.PSObject.Properties.Name -contains "last_success_day_xm")) {
+            # Backward compatibility with old state key.
+            $fallback = $null
+            if ($s.PSObject.Properties.Name -contains "last_success_day_vn") {
+                $fallback = $s.last_success_day_vn
+            }
+            return [PSCustomObject]@{ last_success_day_xm = $fallback }
+        }
+        return $s
     }
-    return [PSCustomObject]@{ last_success_day_vn = $null }
+    return [PSCustomObject]@{ last_success_day_xm = $null }
 }
 
 function Save-RunnerState {
@@ -33,15 +42,15 @@ function Save-RunnerState {
     if (!(Test-Path $dir)) {
         New-Item -ItemType Directory -Path $dir | Out-Null
     }
-    [PSCustomObject]@{ last_success_day_vn = $LastDay } | ConvertTo-Json | Set-Content $stateFile -Encoding UTF8
+    [PSCustomObject]@{ last_success_day_xm = $LastDay } | ConvertTo-Json | Set-Content $stateFile -Encoding UTF8
 }
 
 function Get-DayRangeToProcess {
     param([string]$LastSuccessDay)
 
-    # VN timezone: UTC+7
-    $todayVn = (Get-Date).ToUniversalTime().AddHours(7).Date
-    $targetDay = $todayVn.AddDays(-1) # process up to yesterday VN
+    # XM server timezone: UTC+2
+    $todayXm = (Get-Date).ToUniversalTime().AddHours(2).Date
+    $targetDay = $todayXm.AddDays(-1) # process up to yesterday XM
 
     if ($LastSuccessDay) {
         $startDay = [datetime]::ParseExact($LastSuccessDay, "yyyy-MM-dd", $null).AddDays(1)
@@ -73,10 +82,10 @@ try {
 
     $accountsFile = Join-Path $ProjectRoot "state\accounts.json"
     $runnerState = Load-RunnerState
-    $daysToProcess = Get-DayRangeToProcess -LastSuccessDay $runnerState.last_success_day_vn
+    $daysToProcess = Get-DayRangeToProcess -LastSuccessDay $runnerState.last_success_day_xm
 
     if ($daysToProcess.Count -eq 0) {
-        Write-Log "No missing VN day to process. Exit."
+        Write-Log "No missing XM day to process. Exit."
         exit 0
     }
 
@@ -88,24 +97,31 @@ try {
 
         if (Test-Path $accountsFile) {
             Write-Log "Using multi-account config: $accountsFile"
-            & $python "scripts/extract_mt5_events.py" --accounts-file $accountsFile --day-vn $day --output $rawOut --output-format csv
+            & $python "scripts/extract_mt5_events.py" --accounts-file $accountsFile --day-xm $day --output $rawOut --output-format csv
         }
         else {
-            & $python "scripts/extract_mt5_events.py" --day-vn $day --output $rawOut --output-format csv
+            & $python "scripts/extract_mt5_events.py" --day-xm $day --output $rawOut --output-format csv
         }
         if ($LASTEXITCODE -ne 0) { throw "extract_mt5_events failed (day=$day) with exit code $LASTEXITCODE" }
         Write-Log "Extract completed: $rawOut"
-
-        & $python "scripts/push_to_gsheet.py" --raw-events $rawOut --daily-summary "out/daily_summary_latest.csv"
-        if ($LASTEXITCODE -ne 0) { throw "push_to_gsheet failed (day=$day) with exit code $LASTEXITCODE" }
-        Write-Log "Push to Google Sheets completed for day=$day"
 
         & $python "scripts/build_dashboard_data.py" --raw-input $rawOut
         if ($LASTEXITCODE -ne 0) { throw "build_dashboard_data failed (day=$day) with exit code $LASTEXITCODE" }
         Write-Log "Dashboard data updated for day=$day"
 
+        # Push full merged history to avoid overwriting sheet with only latest day.
+        & $python "scripts/push_to_gsheet.py" --raw-events "dashboard/data/raw_events_history.csv" --daily-summary "dashboard/data/daily_summary_history.csv"
+        if ($LASTEXITCODE -ne 0) { throw "push_to_gsheet failed (day=$day) with exit code $LASTEXITCODE" }
+        Write-Log "Push full history to Google Sheets completed for day=$day"
+
+        # Optional: push incremental day output to Cloudflare Worker API (D1-backed).
+        # Enabled when WORKER_API_URL and WORKER_API_TOKEN are configured in environment/.env.
+        & $python "scripts/push_to_cloudflare_worker.py" --summary-input "out/daily_summary_latest.csv" --raw-input $rawOut --skip-if-missing
+        if ($LASTEXITCODE -ne 0) { throw "push_to_cloudflare_worker failed (day=$day) with exit code $LASTEXITCODE" }
+        Write-Log "Push incremental day data to Cloudflare Worker completed for day=$day"
+
         Save-RunnerState -LastDay $day
-        Write-Log "Runner state updated: last_success_day_vn=$day"
+        Write-Log "Runner state updated: last_success_day_xm=$day"
     }
 
     Write-Log "Pipeline finished successfully"
