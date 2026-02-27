@@ -4,6 +4,7 @@ Automated daily trading journal pipeline for MetaTrader 5 (XM timezone) with Goo
 
 ## What this project does
 - Extracts MT5 deals daily (full Vietnam day window).
+- Extracts MT5 deals daily by XM server day (`GMT+2`) and stores both XM/VN dates.
 - Normalizes data into a stable `raw_events` schema.
 - Builds daily metrics (`daily_summary`) including XM-like order count (`total_positions`).
 - Uploads data to Google Sheets (`raw_events`, `daily_summary`, `config`).
@@ -13,7 +14,8 @@ Automated daily trading journal pipeline for MetaTrader 5 (XM timezone) with Goo
 - `scripts/extract_mt5_events.py`
   - Connect to MT5 terminal.
   - Pull `history_deals_get` in a day window.
-  - Convert timezone XM `GMT+2` -> VN `GMT+7`.
+- Convert timezone XM `GMT+2` -> VN `GMT+7`.
+  - Keep both `trade_date_xm` and `trade_date_vn` for tracking.
   - Output `raw_events` CSV/JSONL.
   - Generate `daily_summary_latest.csv`.
 - `scripts/push_to_gsheet.py`
@@ -24,6 +26,13 @@ Automated daily trading journal pipeline for MetaTrader 5 (XM timezone) with Goo
     - `config`
 - `tasks/run_daily_pipeline.ps1`
   - Full daily pipeline (extract yesterday + push to Google Sheets).
+- `scripts/api_server.py`
+  - Serve `daily_summary_history.csv` and `raw_events_history.csv` as JSON API.
+  - Optional token auth via `API_TOKEN`.
+- `scripts/push_to_cloudflare_worker.py`
+  - Push merged history CSV (`dashboard/data/*_history.csv`) to Worker `/api/sync`.
+  - Uses env `WORKER_API_URL`, `WORKER_API_TOKEN`.
+  - If Worker is protected by Cloudflare Access, also set `CF_ACCESS_CLIENT_ID`, `CF_ACCESS_CLIENT_SECRET`.
 
 ## Project structure
 ```text
@@ -68,19 +77,29 @@ GOOGLE_SHEET_ID=your_google_sheet_id
 ```
 
 ## Run manually
-- Extract full today (VN day):
+- Extract full today (XM day):
 ```powershell
-python scripts/extract_mt5_events.py --today-vn --output out/raw_events_today.csv --output-format csv --dry-run
+python scripts/extract_mt5_events.py --today-xm --output out/raw_events_today.csv --output-format csv --dry-run
 ```
 
-- Extract a specific VN day:
+- Extract a specific XM day:
 ```powershell
-python scripts/extract_mt5_events.py --day-vn 2026-02-23 --output out/raw_events_2026-02-23.csv --output-format csv
+python scripts/extract_mt5_events.py --day-xm 2026-02-23 --output out/raw_events_2026-02-23.csv --output-format csv
 ```
 
 - Push to Google Sheets:
 ```powershell
 python scripts/push_to_gsheet.py --raw-events out/raw_events_2026-02-23.csv --daily-summary out/daily_summary_latest.csv
+```
+
+- Run API server for dashboard:
+```powershell
+uvicorn scripts.api_server:app --host 0.0.0.0 --port 8787
+```
+
+- Push full history to Cloudflare Worker:
+```powershell
+python scripts/push_to_cloudflare_worker.py --summary-input dashboard/data/daily_summary_history.csv --raw-input dashboard/data/raw_events_history.csv
 ```
 
 ## Daily automation (9:00 AM)
@@ -116,6 +135,13 @@ python scripts/build_dashboard_data.py --raw-input out/raw_events_2026-02-23.csv
   - `https://<your-username>.github.io/TradingDailyJournal/dashboard/`
 
 Detailed guide: `docs/step4_dashboard.md`.
+Architecture guide: `docs/architecture_cloudflare.md`.
+
+### Dashboard data source (API-first with CSV fallback)
+- Dashboard will try API first if configured:
+  - `localStorage.dashboard_api_base` (example: `https://api.yourdomain.com`)
+  - optional `localStorage.dashboard_api_token`
+- If API is unavailable, dashboard falls back to local CSV in `dashboard/data/`.
 
 
 ## Multi-account collect (trade + cashflow)
@@ -124,7 +150,7 @@ You can extract multiple MT5 accounts in one run using `--accounts-file`.
 1. Create `state/accounts.json` from `docs/accounts.example.json`.
 2. Run:
 ```powershell
-python scripts/extract_mt5_events.py --accounts-file state/accounts.json --day-vn 2026-02-23 --output out/raw_events_2026-02-23.csv --output-format csv
+python scripts/extract_mt5_events.py --accounts-file state/accounts.json --day-xm 2026-02-23 --output out/raw_events_2026-02-23.csv --output-format csv
 ```
 
 Notes:
