@@ -751,7 +751,8 @@ function renderCurrentView() {
     Math.ceil((currentView === "event" ? filteredEvents.length : filteredPositions.length) / pageSize)
   );
   document.getElementById("prev-page").disabled = currentPage <= 1;
-  document.getElementById("next-page").disabled = currentPage >= totalPages;
+  const isAtEnd = currentPage >= totalPages;
+  document.getElementById("next-page").disabled = isAtEnd && !(API_BASE && rawApiHasMore);
 }
 
 function hydrateRawData(rows) {
