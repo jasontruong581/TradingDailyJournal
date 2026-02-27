@@ -33,7 +33,15 @@
 
     <section class="panel">
       <div class="panel-head">
-        <h2>Daily Net Profit</h2>
+        <h2>
+          Daily Net Profit
+          <span
+            class="formula-tip"
+            title="Formula (VN day, GMT+7): daily_net = sum(net_profit) for trade_date_vn in [00:00:00..23:59:59]. Chart shows latest 7 trading days."
+            aria-label="Daily Net Profit formula"
+            >i</span
+          >
+        </h2>
       </div>
       <div class="filters">
         <label>From
@@ -62,7 +70,15 @@
       </aside>
       <div class="chart-main">
         <div class="panel-head">
-          <h2>Growth And Cashflow</h2>
+          <h2>
+            Growth And Cashflow
+            <span
+              class="formula-tip"
+              title="Growth line: cumulative(trading_pnl), where trading_pnl = gross_profit + gross_loss. Cashflow bars: deposit = total_deposit, withdrawal = -total_withdrawal."
+              aria-label="Growth And Cashflow formula"
+              >i</span
+            >
+          </h2>
         </div>
         <div class="chart-wrap">
           <canvas id="growth-chart"></canvas>
@@ -72,11 +88,31 @@
 
     <section class="chart-grid">
       <section class="panel">
-        <div class="panel-head"><h2>Drawdown By Day</h2></div>
+        <div class="panel-head">
+          <h2>
+            Drawdown By Day
+            <span
+              class="formula-tip"
+              title="For each VN day: drawdown = growth - running_peak(growth). Values are <= 0."
+              aria-label="Drawdown By Day formula"
+              >i</span
+            >
+          </h2>
+        </div>
         <div class="chart-wrap small"><canvas id="drawdown-chart"></canvas></div>
       </section>
       <section class="panel">
-        <div class="panel-head"><h2>Monthly Trading PnL</h2></div>
+        <div class="panel-head">
+          <h2>
+            Monthly Trading PnL
+            <span
+              class="formula-tip"
+              title="For each month (YYYY-MM): monthly_trading_pnl = sum(daily_trading_pnl), where daily_trading_pnl = gross_profit + gross_loss."
+              aria-label="Monthly Trading PnL formula"
+              >i</span
+            >
+          </h2>
+        </div>
         <div class="chart-wrap small"><canvas id="monthly-chart"></canvas></div>
       </section>
       <section class="panel">
@@ -217,6 +253,6 @@
   </main>
 
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
-  <script src="app.js?v=20260224-3"></script>
+  <script src="app.js?v=20260227-1"></script>
 </body>
 </html>
