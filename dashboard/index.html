@@ -11,7 +11,7 @@
 </head>
 <body>
   <main class="container">
-    <header class="hero">
+    <header class="hero" title="Tổng quan hiệu suất giao dịch, thời điểm cập nhật và trạng thái dashboard.">
       <div class="hero-top">
         <div>
           <p class="kicker">Trading Daily Journal</p>
@@ -23,15 +23,15 @@
     </header>
 
     <section class="kpi-grid">
-      <article class="kpi-card"><h2>Trading PnL</h2><p id="kpi-trade-pnl">-</p></article>
-      <article class="kpi-card"><h2>Net PnL</h2><p id="kpi-net">-</p></article>
-      <article class="kpi-card"><h2>Total Positions</h2><p id="kpi-positions">-</p></article>
-      <article class="kpi-card"><h2>Win Rate</h2><p id="kpi-winrate">-</p></article>
-      <article class="kpi-card"><h2>Gross Profit</h2><p id="kpi-gross-profit">-</p></article>
-      <article class="kpi-card"><h2>Gross Loss</h2><p id="kpi-loss">-</p></article>
+      <article class="kpi-card" title="Lãi/lỗ thuần từ giao dịch (không gồm nạp/rút)."><h2>Trading PnL</h2><p id="kpi-trade-pnl">-</p></article>
+      <article class="kpi-card" title="Lãi/lỗ ròng sau khi cộng cả cashflow liên quan."><h2>Net PnL</h2><p id="kpi-net">-</p></article>
+      <article class="kpi-card" title="Tổng số position trong khoảng lọc hiện tại."><h2>Total Positions</h2><p id="kpi-positions">-</p></article>
+      <article class="kpi-card" title="Tỷ lệ position có lãi trên tổng position đóng."><h2>Win Rate</h2><p id="kpi-winrate">-</p></article>
+      <article class="kpi-card" title="Tổng lợi nhuận dương (gross profit)."><h2>Gross Profit</h2><p id="kpi-gross-profit">-</p></article>
+      <article class="kpi-card" title="Tổng lỗ âm (gross loss)."><h2>Gross Loss</h2><p id="kpi-loss">-</p></article>
     </section>
 
-    <section class="panel">
+    <section class="panel" title="Biểu đồ lãi/lỗ ròng theo từng ngày VN (GMT+7).">
       <div class="panel-head">
         <h2>
           Daily Net Profit
@@ -43,12 +43,12 @@
           >
         </h2>
       </div>
-      <div class="filters">
+      <div class="filters" title="Chọn khoảng ngày để lọc dữ liệu biểu đồ theo ngày VN (GMT+7).">
         <label>From
-          <input id="summary-from" type="date" />
+          <input id="summary-from" type="date" title="Ngày bắt đầu theo GMT+7 (00:00:00)." />
         </label>
         <label>To
-          <input id="summary-to" type="date" />
+          <input id="summary-to" type="date" title="Ngày kết thúc theo GMT+7 (23:59:59)." />
         </label>
       </div>
       <div class="chart-wrap">
@@ -56,8 +56,8 @@
       </div>
     </section>
 
-    <section class="panel analytics-layout">
-      <aside class="stats-side">
+    <section class="panel analytics-layout" title="Khối phân tích nâng cao gồm snapshot, tăng trưởng và cashflow.">
+      <aside class="stats-side" title="Các chỉ số tổng hợp nhanh để đánh giá chất lượng hiệu suất.">
         <h3>Performance Snapshot</h3>
         <ul class="stats-list">
           <li><span>Abs Gain</span><strong id="stat-abs-gain">-</strong></li>
@@ -68,7 +68,7 @@
           <li><span>Total Withdrawals</span><strong id="stat-wd">-</strong></li>
         </ul>
       </aside>
-      <div class="chart-main">
+      <div class="chart-main" title="Đường tăng trưởng lũy kế và cột dòng tiền nạp/rút theo ngày.">
         <div class="panel-head">
           <h2>
             Growth And Cashflow
@@ -87,7 +87,7 @@
     </section>
 
     <section class="chart-grid">
-      <section class="panel">
+      <section class="panel" title="Mức sụt giảm vốn theo từng ngày giao dịch.">
         <div class="panel-head">
           <h2>
             Drawdown By Day
@@ -101,7 +101,7 @@
         </div>
         <div class="chart-wrap small"><canvas id="drawdown-chart"></canvas></div>
       </section>
-      <section class="panel">
+      <section class="panel" title="Tổng Trading PnL theo từng tháng (YYYY-MM).">
         <div class="panel-head">
           <h2>
             Monthly Trading PnL
@@ -115,17 +115,17 @@
         </div>
         <div class="chart-wrap small"><canvas id="monthly-chart"></canvas></div>
       </section>
-      <section class="panel">
+      <section class="panel" title="Hiệu suất theo từng mã symbol.">
         <div class="panel-head"><h2>Symbol Performance</h2></div>
         <div class="chart-wrap small"><canvas id="symbol-chart"></canvas></div>
       </section>
-      <section class="panel">
+      <section class="panel" title="Hiệu suất theo thứ trong tuần (theo giờ VN).">
         <div class="panel-head"><h2>Weekday Performance</h2></div>
         <div class="chart-wrap small"><canvas id="weekday-chart"></canvas></div>
       </section>
     </section>
 
-    <section class="panel">
+    <section class="panel" title="Bảng thống kê theo các khoảng thời gian chuẩn.">
       <div class="panel-head"><h2>Period Stats</h2></div>
       <div class="table-wrap">
         <table id="periods-table">
@@ -144,7 +144,7 @@
       </div>
     </section>
 
-    <section class="panel">
+    <section class="panel" title="Bảng tổng hợp theo ngày VN, dùng để đối chiếu với chart và KPI.">
       <div class="panel-head">
         <h2>Daily Summary</h2>
       </div>
@@ -167,28 +167,28 @@
       </div>
     </section>
 
-    <section class="panel" id="details-section">
+    <section class="panel" id="details-section" title="Chi tiết giao dịch để cross-check từng event/position.">
       <div class="panel-head">
         <h2>Trade Details (Cross-check)</h2>
         <p id="details-status">Loading on demand when this section is visible...</p>
       </div>
-      <div class="view-switch">
-        <button id="view-position" type="button" class="active">Position View</button>
-        <button id="view-event" type="button">Event View</button>
+      <div class="view-switch" title="Chuyển giữa góc nhìn Position và Event.">
+        <button id="view-position" type="button" class="active" title="Nhóm theo position để xem kết quả đóng/mở theo cụm.">Position View</button>
+        <button id="view-event" type="button" title="Xem từng event/deal riêng lẻ.">Event View</button>
       </div>
 
-      <div class="filters">
+      <div class="filters" title="Lọc dữ liệu chi tiết theo ngày VN (GMT+7), action và symbol.">
         <label>From
-          <input id="details-from" type="date" />
+          <input id="details-from" type="date" title="Ngày bắt đầu theo GMT+7 (00:00:00)." />
         </label>
         <label>To
-          <input id="details-to" type="date" />
+          <input id="details-to" type="date" title="Ngày kết thúc theo GMT+7 (23:59:59)." />
         </label>
         <label>Date
-          <select id="filter-date"><option value="">All</option></select>
+          <select id="filter-date" title="Lọc nhanh theo đúng 1 ngày VN cụ thể."><option value="">All</option></select>
         </label>
         <label>Action
-          <select id="filter-action">
+          <select id="filter-action" title="Lọc theo loại hành động giao dịch.">
             <option value="">All</option>
             <option value="Buy">Buy</option>
             <option value="Sell">Sell</option>
@@ -198,10 +198,10 @@
           </select>
         </label>
         <label>Symbol
-          <input id="filter-symbol" type="text" placeholder="e.g. GOLD" />
+          <input id="filter-symbol" type="text" placeholder="e.g. GOLD" title="Nhập mã symbol để lọc (không phân biệt hoa thường)." />
         </label>
         <label style="align-self:end">
-          <button id="export-details" type="button" class="details-export-btn">Export CSV</button>
+          <button id="export-details" type="button" class="details-export-btn" title="Xuất CSV theo bộ lọc hiện tại (ngày VN GMT+7).">Export CSV</button>
         </label>
       </div>
 
@@ -244,10 +244,10 @@
         </table>
       </div>
 
-      <div class="pagination">
-        <button id="prev-page" type="button">Previous</button>
+      <div class="pagination" title="Phân trang dữ liệu, có thể tự tải thêm khi đi tới trang cuối.">
+        <button id="prev-page" type="button" title="Về trang trước.">Previous</button>
         <span id="page-info">Page 0 / 0</span>
-        <button id="next-page" type="button">Next</button>
+        <button id="next-page" type="button" title="Sang trang sau hoặc tải thêm dữ liệu.">Next</button>
       </div>
     </section>
   </main>
