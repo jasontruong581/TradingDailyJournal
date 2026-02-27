@@ -505,19 +505,22 @@ function renderSummaryTable(rows) {
 function renderDailyNetChart(rows) {
   destroyChart("dailyNet");
   const ctx = document.getElementById("pnl-chart");
+  const chartRows = rows
+    .slice()
+    .sort((a, b) => a.trade_date_vn.localeCompare(b.trade_date_vn))
+    .slice(-7); // 7 trading days; weekends/no-trade days are naturally excluded
+  const values = chartRows.map((r) => num(r.net_profit));
   charts.dailyNet = new Chart(ctx, {
-    type: "line",
+    type: "bar",
     data: {
-      labels: rows.map((r) => r.trade_date_vn),
+      labels: chartRows.map((r) => r.trade_date_vn),
       datasets: [
         {
           label: "Net Profit",
-          data: rows.map((r) => num(r.net_profit)),
-          borderColor: "#2e6cff",
-          backgroundColor: "rgba(46,108,255,.15)",
-          fill: true,
-          tension: 0.28,
-          pointRadius: 2,
+          data: values,
+          borderColor: values.map((v) => (v >= 0 ? "rgba(18,161,80,1)" : "rgba(217,45,32,1)")),
+          backgroundColor: values.map((v) => (v >= 0 ? "rgba(18,161,80,.65)" : "rgba(217,45,32,.65)")),
+          borderWidth: 1,
         },
       ],
     },
@@ -526,7 +529,7 @@ function renderDailyNetChart(rows) {
       maintainAspectRatio: false,
       plugins: { legend: { display: false } },
       scales: {
-        y: { grid: { color: "rgba(125,140,170,.2)" } },
+        y: { grid: { color: "rgba(125,140,170,.2)" }, beginAtZero: true },
         x: { grid: { display: false } },
       },
     },
@@ -913,6 +916,17 @@ async function start() {
     initDefaultViewButtons();
 
     summaryAll = await loadSummaryRows();
+    if (summaryAll.length) {
+      const sortedDays = summaryAll
+        .map((r) => r.trade_date_vn)
+        .filter(Boolean)
+        .sort();
+      const last7 = sortedDays.slice(-7);
+      if (last7.length) {
+        document.getElementById("summary-from").value = last7[0];
+        document.getElementById("summary-to").value = last7[last7.length - 1];
+      }
+    }
     applySummaryFilter();
 
     loadRawForAnalytics();
