@@ -6,6 +6,10 @@ let filteredEvents = [];
 let filteredPositions = [];
 let rawLoaded = false;
 let rawAnalyticsLoaded = false;
+let rawApiOffset = 0;
+let rawApiHasMore = false;
+let rawApiLoading = false;
+const rawApiLimit = 1000;
 let currentPage = 1;
 let currentView = "position";
 let sortKey = "close_time_vn";
@@ -30,25 +34,41 @@ async function loadCsv(path) {
   return parseCsv(await res.text());
 }
 
-async function loadApiRows(path) {
+async function loadApiRows(path, params = {}) {
   if (!API_BASE) throw new Error("API not configured");
-  const res = await fetch(`${API_BASE}${path}`, {
+  const qs = new URLSearchParams();
+  Object.entries(params).forEach(([k, v]) => {
+    if (v === undefined || v === null || v === "") return;
+    qs.set(k, String(v));
+  });
+  const url = `${API_BASE}${path}${qs.toString() ? `?${qs.toString()}` : ""}`;
+  const res = await fetch(url, {
     cache: "no-store",
     credentials: "include",
   });
   if (!res.ok) throw new Error(`Failed API ${path}: ${res.status}`);
   const body = await res.json();
   if (!body || !Array.isArray(body.rows)) throw new Error(`Invalid API response: ${path}`);
-  return body.rows;
+  return body;
 }
 
 async function loadSummaryRows() {
-  if (API_BASE) return await loadApiRows("/api/summary");
+  if (API_BASE) {
+    const body = await loadApiRows("/api/summary");
+    return body.rows;
+  }
   return await loadCsv("./data/daily_summary_history.csv");
 }
 
 async function loadRawRows() {
-  if (API_BASE) return await loadApiRows("/api/raw-events");
+  if (API_BASE) {
+    rawApiOffset = 0;
+    rawApiHasMore = true;
+    const body = await loadApiRows("/api/raw-events", { limit: rawApiLimit, offset: rawApiOffset });
+    rawApiOffset += body.rows.length;
+    rawApiHasMore = body.rows.length >= rawApiLimit;
+    return body.rows;
+  }
   return await loadCsv("./data/raw_events_history.csv");
 }
 
@@ -64,6 +84,45 @@ function parseCsv(text) {
     });
     return row;
   });
+}
+
+function uniqueByEventId(baseRows, incomingRows) {
+  const seen = new Set(baseRows.map((r) => r.event_id));
+  const out = [...baseRows];
+  incomingRows.forEach((r) => {
+    const key = r.event_id || `${r.account_id || ""}:${r.ticket || ""}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push(r);
+  });
+  return out;
+}
+
+function oldestLoadedTradeDate() {
+  const dates = rawEvents.map((r) => r.trade_date_vn).filter(Boolean);
+  if (!dates.length) return "";
+  dates.sort();
+  return dates[0];
+}
+
+async function loadMoreRawRowsApi(extraParams = {}) {
+  if (!API_BASE || !rawApiHasMore || rawApiLoading) return false;
+  rawApiLoading = true;
+  try {
+    const body = await loadApiRows("/api/raw-events", {
+      limit: rawApiLimit,
+      offset: rawApiOffset,
+      ...extraParams,
+    });
+    const before = rawEvents.length;
+    rawEvents = uniqueByEventId(rawEvents, body.rows || []);
+    const received = (body.rows || []).length;
+    rawApiOffset += received;
+    rawApiHasMore = received >= rawApiLimit && rawEvents.length > before;
+    return rawEvents.length > before;
+  } finally {
+    rawApiLoading = false;
+  }
 }
 
 function parseCsvLine(line) {
@@ -564,12 +623,23 @@ function sortRows(rows, key, dir, numericKeys = []) {
   return sorted;
 }
 
-function applyDetailsFilter() {
+async function applyDetailsFilter() {
   const from = document.getElementById("details-from").value;
   const to = document.getElementById("details-to").value;
   const date = document.getElementById("filter-date").value;
   const action = document.getElementById("filter-action").value;
   const symbol = document.getElementById("filter-symbol").value.trim().toUpperCase();
+
+  if (API_BASE && from) {
+    let guard = 0;
+    while (rawApiHasMore && oldestLoadedTradeDate() && oldestLoadedTradeDate() > from && guard < 20) {
+      const added = await loadMoreRawRowsApi();
+      if (!added) break;
+      guard += 1;
+    }
+    groupedPositions = buildGroupedPositions(rawEvents);
+    fillDateFilter(rawEvents);
+  }
 
   filteredEvents = rawEvents.filter((r) => {
     if ((from || to) && !inRange(r.trade_date_vn, from, to)) return false;
@@ -772,12 +842,25 @@ function bindEvents() {
     }
   });
 
-  document.getElementById("next-page").addEventListener("click", () => {
+  document.getElementById("next-page").addEventListener("click", async () => {
     const total = currentView === "event" ? filteredEvents.length : filteredPositions.length;
     const totalPages = Math.max(1, Math.ceil(total / pageSize));
     if (currentPage < totalPages) {
       currentPage += 1;
       renderCurrentView();
+      return;
+    }
+    if (API_BASE && rawApiHasMore) {
+      const status = document.getElementById("details-status");
+      status.textContent = "Loading more records...";
+      const added = await loadMoreRawRowsApi();
+      if (added) {
+        rawEvents = enrichEventsWithPositionStats(rawEvents);
+        groupedPositions = buildGroupedPositions(rawEvents);
+        fillDateFilter(rawEvents);
+        await applyDetailsFilter();
+      }
+      status.textContent = `Loaded ${rawEvents.length} events / ${groupedPositions.length} positions (50 per page)`;
     }
   });
 
