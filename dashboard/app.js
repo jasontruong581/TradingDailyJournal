@@ -758,6 +758,65 @@ function renderCurrentView() {
   document.getElementById("next-page").disabled = isAtEnd && !(API_BASE && rawApiHasMore);
 }
 
+function csvEscape(v) {
+  const s = String(v ?? "");
+  if (s.includes(",") || s.includes('"') || s.includes("\n")) return `"${s.replace(/"/g, '""')}"`;
+  return s;
+}
+
+function exportRowsToCsv(filename, headers, rows) {
+  const lines = [headers.join(",")];
+  rows.forEach((r) => {
+    lines.push(headers.map((h) => csvEscape(r[h])).join(","));
+  });
+  const blob = new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8;" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  URL.revokeObjectURL(a.href);
+  a.remove();
+}
+
+function exportDetailsCsv() {
+  const from = document.getElementById("details-from").value || "all";
+  const to = document.getElementById("details-to").value || "all";
+  const stamp = `${from}_to_${to}`.replace(/[^\w-]+/g, "_");
+  if (currentView === "event") {
+    const headers = [
+      "trade_date_vn",
+      "close_time_vn",
+      "event_id",
+      "position_id",
+      "deal_role",
+      "action",
+      "symbol",
+      "lots",
+      "close_price",
+      "position_pnl",
+      "profit",
+      "account_id",
+    ];
+    exportRowsToCsv(`trade_details_events_${stamp}.csv`, headers, filteredEvents);
+    return;
+  }
+  const headers = [
+    "trade_date_vn",
+    "account_id",
+    "position_id",
+    "symbol",
+    "entry_time_vn",
+    "exit_time_vn",
+    "entry_price",
+    "exit_price",
+    "lots",
+    "deals_count",
+    "position_pnl",
+  ];
+  exportRowsToCsv(`trade_details_positions_${stamp}.csv`, headers, filteredPositions);
+}
+
 function hydrateRawData(rows) {
   rawEvents = enrichEventsWithPositionStats(rows);
   groupedPositions = buildGroupedPositions(rawEvents);
@@ -891,6 +950,7 @@ function bindEvents() {
     localStorage.setItem("dash-theme", next);
     document.getElementById("theme-toggle").textContent = next === "dark" ? "Light" : "Dark";
   });
+  document.getElementById("export-details").addEventListener("click", () => rawLoaded && exportDetailsCsv());
 }
 
 function initDefaultViewButtons() {
@@ -925,6 +985,8 @@ async function start() {
       if (last7.length) {
         document.getElementById("summary-from").value = last7[0];
         document.getElementById("summary-to").value = last7[last7.length - 1];
+        document.getElementById("details-from").value = last7[0];
+        document.getElementById("details-to").value = last7[last7.length - 1];
       }
     }
     applySummaryFilter();
