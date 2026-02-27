@@ -137,6 +137,7 @@ python scripts/build_dashboard_data.py --raw-input out/raw_events_2026-02-23.csv
 Detailed guide: `docs/step4_dashboard.md`.
 Architecture guide: `docs/architecture_cloudflare.md`.
 Chart tooltip convention: `docs/chart_tooltip_convention.md`.
+AI rebuild docs index: `docs/ai_rebuild/README.md`.
 
 ### Dashboard data source (API-first with CSV fallback)
 - Dashboard will try API first if configured:
