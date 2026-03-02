@@ -30,6 +30,19 @@ python -m http.server 8080
 # mo http://localhost:8080/dashboard/
 ```
 
+## API mode (recommended for sensitive data)
+- Start API:
+```powershell
+uvicorn scripts.api_server:app --host 0.0.0.0 --port 8787
+```
+- Configure browser:
+```js
+localStorage.setItem("dashboard_api_base", "http://localhost:8787");
+// optional token if API_TOKEN is enabled:
+// localStorage.setItem("dashboard_api_token", "your-token");
+```
+- Dashboard will use API first, and fallback to CSV if API is unreachable.
+
 ## Publish on GitHub Pages
 1. Vao repo `Settings` -> `Pages`.
 2. Chon `Deploy from a branch`.

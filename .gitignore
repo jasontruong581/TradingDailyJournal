@@ -21,6 +21,7 @@ venv/
 logs/
 out/
 state/
+state/accounts.json
 
 # OS/IDE
 .DS_Store

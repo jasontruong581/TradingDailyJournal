@@ -1,5 +1,7 @@
-﻿MetaTrader5==5.0.45
+MetaTrader5==5.0.45
 python-dotenv==1.0.1
 numpy<2
 gspread==6.1.2
 google-auth==2.35.0
+fastapi==0.115.8
+uvicorn==0.34.0

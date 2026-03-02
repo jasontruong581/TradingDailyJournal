@@ -76,6 +76,7 @@ class RawEvent:
     close_time_xm: str | None
     open_time_vn: str | None
     close_time_vn: str | None
+    trade_date_xm: str
     trade_date_vn: str
     usd_vnd_rate: float | None
     profit_vnd: float | None
@@ -141,6 +142,15 @@ def parse_args() -> argparse.Namespace:
     day_group.add_argument(
         "--day-vn",
         help="Extract full Vietnam day by date (YYYY-MM-DD), e.g. 2026-02-22.",
+    )
+    day_group.add_argument(
+        "--today-xm",
+        action="store_true",
+        help="Extract full current XM server day (00:00-24:00 GMT+2).",
+    )
+    day_group.add_argument(
+        "--day-xm",
+        help="Extract full XM server day by date (YYYY-MM-DD), e.g. 2026-02-22.",
     )
     parser.add_argument("--since", help="UTC ISO time, e.g. 2026-02-01T00:00:00Z")
     parser.add_argument("--until", help="UTC ISO time, default now")
@@ -289,6 +299,13 @@ def trade_date_from_vn(close_time_vn: str | None, open_time_vn: str | None) -> s
     return parse_iso_datetime(ref).astimezone(VN_TZ).date().isoformat()
 
 
+def trade_date_from_xm(close_time_xm: str | None, open_time_xm: str | None) -> str:
+    ref = close_time_xm or open_time_xm
+    if not ref:
+        return datetime.now(tz=XM_TZ).date().isoformat()
+    return parse_iso_datetime(ref).astimezone(XM_TZ).date().isoformat()
+
+
 def calc_source_hash(payload: dict[str, Any]) -> str:
     serialized = json.dumps(payload, sort_keys=True, ensure_ascii=True)
     return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
@@ -339,6 +356,7 @@ def normalize_deal(
         "close_time_xm": close_time_xm,
         "open_time_vn": open_time_vn,
         "close_time_vn": close_time_vn,
+        "trade_date_xm": trade_date_from_xm(close_time_xm, open_time_xm),
         "trade_date_vn": trade_date_from_vn(close_time_vn, open_time_vn),
     }
 
@@ -467,6 +485,12 @@ def full_day_window_utc_from_vn_date(day_vn: datetime.date) -> tuple[datetime, d
     return start_vn.astimezone(UTC), end_vn.astimezone(UTC)
 
 
+def full_day_window_utc_from_xm_date(day_xm: datetime.date) -> tuple[datetime, datetime]:
+    start_xm = datetime.combine(day_xm, datetime.min.time(), tzinfo=XM_TZ)
+    end_xm = start_xm + timedelta(days=1)
+    return start_xm.astimezone(UTC), end_xm.astimezone(UTC)
+
+
 def resolve_window(args: argparse.Namespace, state: dict[str, Any]) -> tuple[datetime, datetime]:
     if args.today_vn:
         return full_day_window_utc_from_vn_date(datetime.now(tz=VN_TZ).date())
@@ -477,6 +501,16 @@ def resolve_window(args: argparse.Namespace, state: dict[str, Any]) -> tuple[dat
         except ValueError as exc:
             raise SystemExit("Invalid --day-vn format. Use YYYY-MM-DD, e.g. 2026-02-22") from exc
         return full_day_window_utc_from_vn_date(day_vn)
+
+    if args.today_xm:
+        return full_day_window_utc_from_xm_date(datetime.now(tz=XM_TZ).date())
+
+    if args.day_xm:
+        try:
+            day_xm = datetime.strptime(args.day_xm, "%Y-%m-%d").date()
+        except ValueError as exc:
+            raise SystemExit("Invalid --day-xm format. Use YYYY-MM-DD, e.g. 2026-02-22") from exc
+        return full_day_window_utc_from_xm_date(day_xm)
 
     now_utc = datetime.now(tz=UTC)
     until_utc = parse_iso_utc(args.until) if args.until else now_utc
