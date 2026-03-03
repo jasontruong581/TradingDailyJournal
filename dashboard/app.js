@@ -17,10 +17,11 @@ let sortDir = "desc";
 let posSortKey = "exit_time_vn";
 let posSortDir = "desc";
 const pageSize = 50;
+const DEFAULT_API_BASE = "https://trading-api.hoangth6892.workers.dev";
 const API_BASE = (
   window.__DASHBOARD_API_BASE__ ||
   localStorage.getItem("dashboard_api_base") ||
-  ""
+  DEFAULT_API_BASE
 ).replace(/\/+$/, "");
 
 function ts(value) {
@@ -54,20 +55,30 @@ async function loadApiRows(path, params = {}) {
 
 async function loadSummaryRows() {
   if (API_BASE) {
-    const body = await loadApiRows("/api/summary");
-    return body.rows;
+    try {
+      const body = await loadApiRows("/api/summary");
+      return body.rows;
+    } catch (err) {
+      console.warn("API summary load failed, fallback to CSV:", err);
+    }
   }
   return await loadCsv("./data/daily_summary_history.csv");
 }
 
 async function loadRawRows() {
   if (API_BASE) {
-    rawApiOffset = 0;
-    rawApiHasMore = true;
-    const body = await loadApiRows("/api/raw-events", { limit: rawApiLimit, offset: rawApiOffset });
-    rawApiOffset += body.rows.length;
-    rawApiHasMore = body.rows.length >= rawApiLimit;
-    return body.rows;
+    try {
+      rawApiOffset = 0;
+      rawApiHasMore = true;
+      const body = await loadApiRows("/api/raw-events", { limit: rawApiLimit, offset: rawApiOffset });
+      rawApiOffset += body.rows.length;
+      rawApiHasMore = body.rows.length >= rawApiLimit;
+      return body.rows;
+    } catch (err) {
+      console.warn("API raw-events load failed, fallback to CSV:", err);
+      rawApiHasMore = false;
+      rawApiOffset = 0;
+    }
   }
   return await loadCsv("./data/raw_events_history.csv");
 }
