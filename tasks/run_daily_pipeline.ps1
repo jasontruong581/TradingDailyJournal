@@ -13,6 +13,7 @@ if (!(Test-Path $logDir)) {
 $stamp = Get-Date -Format "yyyyMMdd_HHmmss"
 $runLog = Join-Path $logDir "pipeline_$stamp.log"
 $stateFile = Join-Path $ProjectRoot "state\pipeline_runner_state.json"
+$runtimeLockFile = Join-Path $ProjectRoot "state\python_runtime_lock.json"
 
 function Write-Log {
     param([string]$Message)
@@ -45,6 +46,114 @@ function Save-RunnerState {
     [PSCustomObject]@{ last_success_day_xm = $LastDay } | ConvertTo-Json | Set-Content $stateFile -Encoding UTF8
 }
 
+function Resolve-PythonExe {
+    param([string]$Root)
+
+    if ($env:PIPELINE_PYTHON) {
+        if (Test-Path $env:PIPELINE_PYTHON) {
+            return $env:PIPELINE_PYTHON
+        }
+        throw "PIPELINE_PYTHON is set but path not found: $($env:PIPELINE_PYTHON)"
+    }
+
+    $venvPython = Join-Path $Root ".venv\Scripts\python.exe"
+    if (Test-Path $venvPython) {
+        return $venvPython
+    }
+
+    $pythonCmd = Get-Command python -ErrorAction SilentlyContinue
+    if ($pythonCmd) {
+        return $pythonCmd.Source
+    }
+
+    throw "Python executable not found. Set PIPELINE_PYTHON or create .venv\Scripts\python.exe"
+}
+
+function Probe-PythonRuntime {
+    param([string]$PythonExe)
+
+    $probeScript = @'
+import json
+import sys
+import platform
+
+result = {
+    "python_executable": sys.executable,
+    "python_version": platform.python_version(),
+    "ok_mt5": False,
+    "ok_deps": False,
+    "mt5_file": "",
+    "mt5_error": "",
+    "deps_error": ""
+}
+
+try:
+    import MetaTrader5 as mt5
+    result["ok_mt5"] = True
+    result["mt5_file"] = getattr(mt5, "__file__", "")
+except Exception as exc:
+    result["mt5_error"] = str(exc)
+
+try:
+    import dotenv
+    import gspread
+    import google.auth
+    result["ok_deps"] = True
+except Exception as exc:
+    result["deps_error"] = str(exc)
+
+print(json.dumps(result, ensure_ascii=True))
+'@
+
+    $out = $probeScript | & $PythonExe -
+    if ($LASTEXITCODE -ne 0) {
+        throw "Python runtime probe failed with exit code $LASTEXITCODE"
+    }
+    if (-not $out) {
+        throw "Python runtime probe returned empty output"
+    }
+    return ($out | ConvertFrom-Json)
+}
+
+function Assert-PythonRuntimeLock {
+    param(
+        [PSCustomObject]$Probe,
+        [string]$LockFile
+    )
+
+    $lockDir = Split-Path $LockFile -Parent
+    if (!(Test-Path $lockDir)) {
+        New-Item -ItemType Directory -Path $lockDir | Out-Null
+    }
+
+    $current = [PSCustomObject]@{
+        python_executable = $Probe.python_executable
+        python_version    = $Probe.python_version
+        mt5_file          = $Probe.mt5_file
+        updated_at_utc    = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+    }
+
+    if (Test-Path $LockFile) {
+        $locked = Get-Content $LockFile -Raw | ConvertFrom-Json
+        $changed = (
+            $locked.python_executable -ne $current.python_executable -or
+            $locked.python_version -ne $current.python_version -or
+            $locked.mt5_file -ne $current.mt5_file
+        )
+
+        if ($changed) {
+            if ($env:ALLOW_PYTHON_RUNTIME_CHANGE -eq "1") {
+                Write-Log "WARNING: Python runtime changed but ALLOW_PYTHON_RUNTIME_CHANGE=1, updating lock."
+            }
+            else {
+                throw "Python runtime changed from lock file. Set ALLOW_PYTHON_RUNTIME_CHANGE=1 for one run to accept new runtime."
+            }
+        }
+    }
+
+    $current | ConvertTo-Json | Set-Content $LockFile -Encoding UTF8
+}
+
 function Get-DayRangeToProcess {
     param([string]$LastSuccessDay)
 
@@ -74,11 +183,14 @@ function Get-DayRangeToProcess {
 }
 
 try {
-    $python = "python"
-    $venvPython = Join-Path $ProjectRoot ".venv\Scripts\python.exe"
-    if (Test-Path $venvPython) {
-        $python = $venvPython
-    }
+    $python = Resolve-PythonExe -Root $ProjectRoot
+    Write-Log "Python resolved: $python"
+
+    $probe = Probe-PythonRuntime -PythonExe $python
+    Write-Log "Python probe: exe=$($probe.python_executable) version=$($probe.python_version) ok_mt5=$($probe.ok_mt5) ok_deps=$($probe.ok_deps)"
+    if (-not $probe.ok_mt5) { throw "MetaTrader5 import failed: $($probe.mt5_error)" }
+    if (-not $probe.ok_deps) { throw "Pipeline dependencies import failed: $($probe.deps_error)" }
+    Assert-PythonRuntimeLock -Probe $probe -LockFile $runtimeLockFile
 
     $accountsFile = Join-Path $ProjectRoot "state\accounts.json"
     $runnerState = Load-RunnerState
