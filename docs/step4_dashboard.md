@@ -3,7 +3,11 @@
 ## Files
 - `dashboard/index.html`
 - `dashboard/styles.css`
-- `dashboard/app.js`
+- `dashboard/app.js` (updated: getActiveSummaryRows seam, account scoping, ensureAllRawLoaded pagination, rawdata:ready event, buildGroupedPositions includes side)
+- `dashboard/js/account-filter.js` (account switcher A/B/All, localStorage persistence, filterRowsByAccount, deriveDailySummary, account:changed event)
+- `dashboard/js/metrics-equity-drawdown.js` (equity curve, balance curve, drawdown %, monthly gain)
+- `dashboard/js/metrics-capital-ledger.js` (A↔B transfer matching, ledger metrics: net capital in, profit taken, cash out, retained, realized/total gain %)
+- `dashboard/js/metrics-edge-stats.js` (expectancy, R, avg win/loss, payoff, streaks, PnL by hour/duration/lot, long vs short, best/worst)
 - `dashboard/data/daily_summary_history.csv`
 - `dashboard/data/raw_events_history.csv`
 - `scripts/build_dashboard_data.py`
@@ -23,6 +27,13 @@ Script se merge:
 - Trade details co filter (`date`, `action`, `symbol`).
 - Pagination 50 records/page.
 - Lazy-load raw data khi section details vao viewport.
+- **Account filter** (A/B/All) — persisted in localStorage, filters daily summary and trade details per account.
+- **Equity & Drawdown analytics** — trading equity curve per closed position, balance curve (deposits+withdrawals+trade PnL, credit excluded), drawdown % underwater chart, monthly gain table.
+- **Capital Ledger** — A→B transfer matching (withdrawal A + deposit B, same trade_date_vn, amount ±$0.01), with net capital in, profit taken, cash out, retained, realized gain %, total gain %, and bonus tracking.
+- **Edge Statistics** — expectancy $, R, avg win/loss, payoff, max win/loss streaks, PnL by entry hour (VN), holding duration buckets, lot buckets, long vs short, best/worst trade.
+
+## Data derivation caveat
+**Important:** Pipeline `daily_summary_history.csv` is contaminated on some days (credit/deposit counted inside net_profit). The dashboard now derives daily summary client-side from raw_events once loaded, which intentionally diverges from the pipeline CSV and is correct per canonical rules (trades only, credit=bonus excluded). This client-side derivation is the source of truth.
 
 ## Preview local
 ```powershell

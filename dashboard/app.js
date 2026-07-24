@@ -451,17 +451,27 @@ function renderAdvancedCharts(summaryRows, rawRows) {
   renderPeriodsTable(summaryRows);
 }
 
+// Seam for account filtering: once raw data is loaded and account-filter.js is
+// present, daily summary rows are derived client-side per active account.
+function getActiveSummaryRows() {
+  if (rawAnalyticsLoaded && typeof deriveDailySummary === "function") {
+    return deriveDailySummary(rawEvents);
+  }
+  return summaryAll;
+}
+
 function applySummaryFilter() {
   const from = document.getElementById("summary-from").value;
   const to = document.getElementById("summary-to").value;
-  const rows = summaryAll.filter((r) => inRange(r.trade_date_vn, from, to));
+  const rows = getActiveSummaryRows().filter((r) => inRange(r.trade_date_vn, from, to));
 
   renderKpi(rows);
   renderSummaryTable(rows);
   renderDailyNetChart(rows);
 
-  const rawInRange = rawEvents.length
-    ? rawEvents.filter((r) => inRange(r.trade_date_vn, from, to))
+  const rawScoped = typeof filterRowsByAccount === "function" ? filterRowsByAccount(rawEvents) : rawEvents;
+  const rawInRange = rawScoped.length
+    ? rawScoped.filter((r) => inRange(r.trade_date_vn, from, to))
     : [];
   renderAdvancedCharts(rows, rawInRange);
 }
@@ -598,6 +608,7 @@ function buildGroupedPositions(rows) {
       account_id: first.account_id || "",
       position_id: first.position_id || "",
       symbol: first.symbol || "",
+      side: first.action || "",
       entry_time_vn: first.close_time_vn || "",
       exit_time_vn: last.close_time_vn || "",
       entry_price: first.close_price || "",
@@ -655,7 +666,11 @@ async function applyDetailsFilter() {
     fillDateFilter(rawEvents);
   }
 
-  filteredEvents = rawEvents.filter((r) => {
+  // Scope details to the active account when account-filter.js is loaded.
+  const scopedEvents = typeof filterRowsByAccount === "function" ? filterRowsByAccount(rawEvents) : rawEvents;
+  const scopedPositions = typeof filterRowsByAccount === "function" ? filterRowsByAccount(groupedPositions) : groupedPositions;
+
+  filteredEvents = scopedEvents.filter((r) => {
     if ((from || to) && !inRange(r.trade_date_vn, from, to)) return false;
     if (date && r.trade_date_vn !== date) return false;
     if (action && r.action !== action) return false;
@@ -670,7 +685,7 @@ async function applyDetailsFilter() {
     "event_id",
   ]);
 
-  filteredPositions = groupedPositions.filter((r) => {
+  filteredPositions = scopedPositions.filter((r) => {
     if ((from || to) && !inRange(r.trade_date_vn, from, to)) return false;
     if (date && r.trade_date_vn !== date) return false;
     if (symbol && !(r.symbol || "").toUpperCase().includes(symbol)) return false;
@@ -836,15 +851,50 @@ function hydrateRawData(rows) {
   rawAnalyticsLoaded = true;
   applyDetailsFilter();
   applySummaryFilter();
+  // Notify analytics modules (account-filter, equity/drawdown, ledger, edge stats).
+  document.dispatchEvent(new CustomEvent("rawdata:ready"));
   const status = document.getElementById("details-status");
   status.textContent = `Loaded ${rawEvents.length} events / ${groupedPositions.length} positions (50 per page)`;
+}
+
+// Force-load every remaining API page so analytics compute on the FULL dataset.
+// Tolerates a mid-pagination failure: keeps whatever pages already loaded.
+async function ensureAllRawLoaded() {
+  let guard = 0;
+  while (rawApiHasMore && guard < 50) {
+    try {
+      const added = await loadMoreRawRowsApi();
+      if (!added) break;
+    } catch (err) {
+      console.warn("Raw pagination stopped early:", err);
+      break;
+    }
+    guard += 1;
+  }
+}
+
+// Single shared loader so loadRawForAnalytics and loadDetailsLazy cannot race
+// (a concurrent second loadRawRows would reset rawApiOffset mid-pagination).
+let rawLoadPromise = null;
+function loadRawOnce() {
+  if (!rawLoadPromise) {
+    rawLoadPromise = (async () => {
+      const rows = await loadRawRows();
+      rawEvents = rows;
+      await ensureAllRawLoaded();
+      hydrateRawData(rawEvents);
+    })().catch((err) => {
+      rawLoadPromise = null; // allow retry on next trigger
+      throw err;
+    });
+  }
+  return rawLoadPromise;
 }
 
 async function loadRawForAnalytics() {
   if (rawAnalyticsLoaded) return;
   try {
-    const rows = await loadRawRows();
-    hydrateRawData(rows);
+    await loadRawOnce();
   } catch {
     // keep dashboard running with summary-only analytics
   }
@@ -855,8 +905,7 @@ async function loadDetailsLazy() {
   const status = document.getElementById("details-status");
   status.textContent = "Loading raw trade records...";
   try {
-    const rows = await loadRawRows();
-    hydrateRawData(rows);
+    await loadRawOnce();
   } catch (err) {
     status.textContent = err.message;
   }
@@ -933,6 +982,8 @@ function bindEvents() {
         groupedPositions = buildGroupedPositions(rawEvents);
         fillDateFilter(rawEvents);
         await applyDetailsFilter();
+        // Newly fetched rows change analytics too.
+        document.dispatchEvent(new CustomEvent("rawdata:ready"));
       }
       status.textContent = `Loaded ${rawEvents.length} events / ${groupedPositions.length} positions (50 per page)`;
     }
