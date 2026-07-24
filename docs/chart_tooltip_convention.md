@@ -25,4 +25,9 @@ Example:
 - Growth And Cashflow
 - Drawdown By Day
 - Monthly Trading PnL
+- Equity Curve (Trading) — per-position trading equity with balance curve (deposits+withdrawals+trade PnL)
+- Drawdown % (Underwater) — underwater percentage capped at 100%, with Max/Current DD metrics
+- Monthly Gain — month PnL / start-of-month balance table
+- Capital Ledger (A ↔ B) — account transfer tracking with realized vs. total gain %, profit taken, cash out, retained capital
+- Edge Analytics — expectancy $, R, avg win/loss, payoff, win/loss streaks, with sub-charts: PnL by entry hour (VN), holding duration buckets, lot buckets, long vs short, best/worst trade
 
