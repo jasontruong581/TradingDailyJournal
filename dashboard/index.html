@@ -18,7 +18,14 @@
           <h1>Performance Dashboard</h1>
           <p id="last-updated">Loading summary...</p>
         </div>
-        <button id="theme-toggle" type="button">Dark</button>
+        <div class="hero-actions">
+          <div class="account-switch" title="Chọn tài khoản để lọc toàn bộ thống kê (A = tài khoản giao dịch chính, B = két giữ lợi nhuận).">
+            <button type="button" data-account="400862814" class="active">A · Main</button>
+            <button type="button" data-account="92234341">B · Profit</button>
+            <button type="button" data-account="all">All</button>
+          </div>
+          <button id="theme-toggle" type="button">Dark</button>
+        </div>
       </div>
     </header>
 
@@ -82,6 +89,137 @@
         </div>
         <div class="chart-wrap">
           <canvas id="growth-chart"></canvas>
+        </div>
+      </div>
+    </section>
+
+    <section class="chart-grid">
+      <section class="panel" title="Đường equity lũy kế theo từng position đã đóng của tài khoản đang chọn (không gồm nạp/rút/bonus).">
+        <div class="panel-head">
+          <h2>
+            Equity Curve (Trading)
+            <span
+              class="formula-tip"
+              title="equity_i = cumulative sum(position_pnl) per CLOSED position, ordered by exit_time_vn (GMT+7). Cashflow (deposit/withdrawal) and broker credit are EXCLUDED. Scope: all-time, active account."
+              aria-label="Equity Curve formula"
+              >i</span
+            >
+          </h2>
+        </div>
+        <p id="equity-empty-note" class="muted-note hidden">Chưa có giao dịch nào cho tài khoản này — biểu đồ sẽ hiển thị khi có dữ liệu.</p>
+        <div class="chart-wrap small"><canvas id="equity-chart"></canvas></div>
+      </section>
+      <section class="panel" title="Biểu đồ underwater: mức sụt giảm % so với đỉnh của đường balance (vốn nạp + PnL, không gồm bonus).">
+        <div class="panel-head">
+          <h2>
+            Drawdown % (Underwater)
+            <span
+              class="formula-tip"
+              title="balance_i = INITIAL_BALANCE + cumulative(deposit + withdrawal + trade_pnl) ordered by close_time_vn (GMT+7); credit/bonus excluded. dd_i = peak>0 ? min(1, (peak - balance_i)/peak) : 0 — cap 100% vì balance có thể âm khi vốn trước epoch (2026-03-02) chưa được ghi nhận (INITIAL_BALANCE_A=0). Chart plots -dd_i%. Max DD % = max(dd_i); Current DD % = dd cuối cùng; Max DD $ tính trên equity curve."
+              aria-label="Drawdown % formula"
+              >i</span
+            >
+          </h2>
+        </div>
+        <ul class="dd-stats">
+          <li><span>Max DD %</span><strong id="stat-maxdd-pct">-</strong></li>
+          <li><span>Max DD $</span><strong id="stat-maxdd-usd">-</strong></li>
+          <li><span>Current DD %</span><strong id="stat-curdd-pct">-</strong></li>
+        </ul>
+        <div class="chart-wrap small"><canvas id="drawdown-pct-chart"></canvas></div>
+      </section>
+    </section>
+
+    <section class="panel" title="Bảng lãi theo tháng: PnL $ và % gain so với balance đầu tháng (tài khoản đang chọn).">
+      <div class="panel-head">
+        <h2>
+          Monthly Gain
+          <span
+            class="formula-tip"
+            title="month_pnl = sum(position_pnl) theo tháng đóng lệnh (exit_time_vn, GMT+7). gain% = month_pnl / balance đầu tháng (balance = vốn nạp + PnL lũy kế, không gồm bonus). Tháng đầu tiên chưa có balance trước đó hiển thị '—'."
+            aria-label="Monthly Gain formula"
+            >i</span
+          >
+        </h2>
+      </div>
+      <div class="table-wrap">
+        <table id="monthly-gain-table"></table>
+      </div>
+    </section>
+
+    <section class="panel analytics-layout" title="Sổ vốn 2 tài khoản: vốn nạp thực, lợi nhuận đã chốt về B, tiền đã rút ra ngoài và lãi thực nhận.">
+      <aside class="stats-side">
+        <h3>
+          Capital Ledger (A ↔ B)
+          <span
+            class="formula-tip"
+            title="Net capital in = INITIAL_BALANCE_A + Σ deposit(A) − Σ withdrawal(A) KHÔNG khớp chuyển A→B. Profit taken = Σ transfer A→B (withdrawal A + deposit B cùng ngày VN, cùng số tiền ±$0.01). Cash out = Σ withdrawal(B) không phải đầu nhận transfer. Retained (Paper) = trading PnL(A) − profit taken. Realized gain % = profit taken / net capital in (lãi THỰC theo quy tắc: chỉ tính khi đã rút về B). Total gain % = trading PnL(A) / net capital in. Bonus (credit) KHÔNG tính vào vốn."
+            aria-label="Capital Ledger formula"
+            >i</span
+          >
+        </h3>
+        <ul class="stats-list">
+          <li><span>Net capital in</span><strong id="ledger-capital-in">-</strong></li>
+          <li><span>Profit taken (A→B)</span><strong id="ledger-profit-taken">-</strong></li>
+          <li><span>Cash out (B→ngoài)</span><strong id="ledger-cashout">-</strong></li>
+          <li><span>Retained on A (Paper)</span><strong id="ledger-retained">-</strong></li>
+          <li><span>Realized gain % (True)</span><strong id="ledger-realized-gain">-</strong></li>
+          <li><span>Total gain %</span><strong id="ledger-total-gain">-</strong></li>
+          <li><span>Bonus (broker credit)</span><strong id="ledger-bonus">-</strong></li>
+        </ul>
+      </aside>
+      <div class="ledger-side">
+        <h3>Transfer Matching</h3>
+        <p id="ledger-matched" class="muted-note">-</p>
+        <p id="ledger-empty-note" class="muted-note hidden">Chưa ghi nhận lệnh rút/chuyển nào — sổ vốn sẽ tự cập nhật khi có dữ liệu withdrawal (A→B hoặc B→ngoài).</p>
+        <p class="muted-note">Quy tắc: lãi chỉ được tính là "thực nhận" khi tiền đã chuyển từ A sang B. Lợi nhuận còn nằm trong A là lãi "giấy" (Paper).</p>
+      </div>
+    </section>
+
+    <section class="panel" id="edge-section" title="Phân tích lợi thế giao dịch (edge) của tài khoản đang chọn: kỳ vọng, chuỗi thắng/thua, hiệu suất theo giờ/thời gian giữ/khối lượng.">
+      <div class="panel-head">
+        <h2>
+          Edge Analytics
+          <span
+            class="formula-tip"
+            title="Expectancy $ = mean(position_pnl). Expectancy R = expectancy / |avg loss| — R là PROXY theo lỗ trung bình vì dữ liệu KHÔNG có stop-loss (sl=0 toàn bộ), không phải R chuẩn theo SL. Payoff = avg win / |avg loss|. Streak tính theo thứ tự exit_time_vn. Scope: all-time, tài khoản đang chọn."
+            aria-label="Edge Analytics formula"
+            >i</span
+          >
+        </h2>
+      </div>
+      <div class="analytics-layout">
+        <aside class="stats-side">
+          <h3>Edge Stats</h3>
+          <ul class="stats-list">
+            <li><span>Expectancy $</span><strong id="edge-expectancy">-</strong></li>
+            <li><span>Expectancy R (proxy)</span><strong id="edge-expectancy-r">-</strong></li>
+            <li><span>Avg Win</span><strong id="edge-avg-win">-</strong></li>
+            <li><span>Avg Loss</span><strong id="edge-avg-loss">-</strong></li>
+            <li><span>Payoff Ratio</span><strong id="edge-payoff">-</strong></li>
+            <li><span>Max Win Streak</span><strong id="edge-win-streak">-</strong></li>
+            <li><span>Max Loss Streak</span><strong id="edge-loss-streak">-</strong></li>
+          </ul>
+          <h3>Long vs Short</h3>
+          <table id="edge-side-table" class="edge-mini-table"></table>
+          <div class="edge-cards">
+            <div class="edge-card" id="edge-best"></div>
+            <div class="edge-card" id="edge-worst"></div>
+          </div>
+        </aside>
+        <div class="edge-chart-grid">
+          <div title="Tổng PnL theo giờ VÀO lệnh (giờ VN, GMT+7, parse trực tiếp từ chuỗi ISO).">
+            <h4>PnL theo giờ vào lệnh (VN)</h4>
+            <div class="chart-wrap small"><canvas id="edge-hour-chart"></canvas></div>
+          </div>
+          <div title="Tổng PnL theo thời gian giữ lệnh = exit_time_vn − entry_time_vn (duration_sec gốc không tin cậy).">
+            <h4>PnL theo thời gian giữ lệnh</h4>
+            <div class="chart-wrap small"><canvas id="edge-duration-chart"></canvas></div>
+          </div>
+          <div title="Tổng PnL theo khối lượng lot của lệnh vào đầu tiên trong position.">
+            <h4>PnL theo khối lượng (lots)</h4>
+            <div class="chart-wrap small"><canvas id="edge-lot-chart"></canvas></div>
+          </div>
         </div>
       </div>
     </section>
@@ -253,6 +391,10 @@
   </main>
 
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
-  <script src="app.js?v=20260227-1"></script>
+  <script src="app.js?v=20260724-1"></script>
+  <script src="js/account-filter.js?v=20260724-1"></script>
+  <script src="js/metrics-equity-drawdown.js?v=20260724-1"></script>
+  <script src="js/metrics-capital-ledger.js?v=20260724-1"></script>
+  <script src="js/metrics-edge-stats.js?v=20260724-1"></script>
 </body>
 </html>
