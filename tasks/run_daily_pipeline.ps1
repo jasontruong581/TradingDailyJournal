@@ -37,6 +37,7 @@ function Load-RunnerState {
     return [PSCustomObject]@{ last_success_day_xm = $null }
 }
 
+
 function Save-RunnerState {
     param([string]$LastDay)
     $dir = Split-Path $stateFile -Parent
@@ -159,10 +160,23 @@ function Get-DayRangeToProcess {
 
     # XM server timezone: UTC+2
     $todayXm = (Get-Date).ToUniversalTime().AddHours(2).Date
-    $targetDay = $todayXm.AddDays(-1) # process up to yesterday XM
+    $targetDay = $todayXm.AddDays(-1) # process up to yesterday XM only
 
+    $startDay = $null
     if ($LastSuccessDay) {
-        $startDay = [datetime]::ParseExact($LastSuccessDay, "yyyy-MM-dd", $null).AddDays(1)
+        try {
+            $parsed = [datetime]::ParseExact($LastSuccessDay, "yyyy-MM-dd", $null)
+            # Guard: future state can skip backfill by mistake
+            if ($parsed.Date -gt $targetDay) {
+                Write-Log "WARNING: state last_success_day_xm=$LastSuccessDay is in future vs target=$($targetDay.ToString('yyyy-MM-dd')); clamping to target."
+                $parsed = $targetDay
+            }
+            $startDay = $parsed.AddDays(1)
+        }
+        catch {
+            Write-Log "WARNING: invalid last_success_day_xm in state: '$LastSuccessDay'. Fallback to yesterday XM only."
+            $startDay = $targetDay
+        }
     }
     else {
         # First run fallback: process yesterday only
@@ -227,13 +241,37 @@ try {
         Write-Log "Push full history to Google Sheets completed for day=$day"
 
         # Optional: push incremental day output to Cloudflare Worker API (D1-backed).
-        # Enabled when WORKER_API_URL and WORKER_API_TOKEN are configured in environment/.env.
         & $python "scripts/push_to_cloudflare_worker.py" --summary-input "out/daily_summary_latest.csv" --raw-input $rawOut --skip-if-missing
         if ($LASTEXITCODE -ne 0) { throw "push_to_cloudflare_worker failed (day=$day) with exit code $LASTEXITCODE" }
         Write-Log "Push incremental day data to Cloudflare Worker completed for day=$day"
 
         Save-RunnerState -LastDay $day
         Write-Log "Runner state updated: last_success_day_xm=$day"
+    }
+
+    # Publish updated dashboard CSV history to GitHub so Cloudflare Pages CSV fallback stays fresh.
+    # Failures here only warn (data is already synced to Google Sheets and Worker above).
+    $csvPaths = @("dashboard/data/daily_summary_history.csv", "dashboard/data/raw_events_history.csv")
+    git add -- $csvPaths
+    $pendingCsv = git status --porcelain -- $csvPaths
+    if ($pendingCsv) {
+        $lastDay = $daysToProcess[$daysToProcess.Count - 1]
+        git commit --quiet -m "chore(data): sync dashboard history CSV through $lastDay" -- $csvPaths
+        if ($LASTEXITCODE -ne 0) {
+            Write-Log "WARNING: git commit for dashboard CSV failed with exit code $LASTEXITCODE"
+        }
+        else {
+            git push --quiet origin main
+            if ($LASTEXITCODE -ne 0) {
+                Write-Log "WARNING: git push for dashboard CSV failed with exit code $LASTEXITCODE (data already synced to Google Sheets and Worker)"
+            }
+            else {
+                Write-Log "Dashboard CSV history published to GitHub; Cloudflare Pages will redeploy."
+            }
+        }
+    }
+    else {
+        Write-Log "Dashboard CSV history unchanged; skip git publish."
     }
 
     Write-Log "Pipeline finished successfully"
