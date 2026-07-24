@@ -20,11 +20,12 @@ import json
 import logging
 import os
 import sys
+import time
 import uuid
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 from dotenv import load_dotenv
 
@@ -133,6 +134,24 @@ def parse_args() -> argparse.Namespace:
         default=0.5,
         help="Warn if total_positions changes by this ratio vs previous run for the same day.",
     )
+    parser.add_argument(
+        "--stability-retries",
+        type=int,
+        default=4,
+        help="Number of retries for stable MT5 fetch in the same window.",
+    )
+    parser.add_argument(
+        "--stability-sleep-sec",
+        type=float,
+        default=2.0,
+        help="Sleep seconds between stability retries.",
+    )
+    parser.add_argument(
+        "--warmup-days",
+        type=int,
+        default=14,
+        help="Warmup history window in days before querying target window.",
+    )
     day_group = parser.add_mutually_exclusive_group()
     day_group.add_argument(
         "--today-vn",
@@ -222,7 +241,7 @@ def load_accounts(args: argparse.Namespace) -> list[AccountConfig]:
         if not raw_accounts:
             raise SystemExit(f"No accounts found in: {path}")
         accounts: list[AccountConfig] = []
-        for idx, item in enumerate(raw_accounts):
+        for item in raw_accounts:
             login = int(item["login"])
             password = str(item["password"])
             server = str(item["server"])
@@ -239,7 +258,6 @@ def load_accounts(args: argparse.Namespace) -> list[AccountConfig]:
             )
         return accounts
 
-    # Backward-compatible single account mode from .env
     return [
         AccountConfig(
             login=int(getenv_required("MT5_LOGIN")),
@@ -264,7 +282,6 @@ def setup_logging(log_file: Path) -> None:
 
 
 def deal_type_to_event_type(deal_type: int, profit: float) -> tuple[str, str]:
-    # Mapping based on MT5 DealType constants
     if deal_type == mt5.DEAL_TYPE_BUY:
         return "trade", "Buy"
     if deal_type == mt5.DEAL_TYPE_SELL:
@@ -378,12 +395,135 @@ def normalize_deal(
     )
 
 
-def get_deals(since_utc: datetime, until_utc: datetime) -> Iterable[Any]:
-    deals = mt5.history_deals_get(since_utc, until_utc)
-    if deals is None:
+def _deal_time_utc(deal: Any) -> datetime | None:
+    t = getattr(deal, "time", None)
+    if not t:
+        return None
+    return datetime.fromtimestamp(t, tz=UTC)
+
+
+def _deal_ticket(deal: Any) -> str:
+    return str(getattr(deal, "ticket", "") or "")
+
+
+def _in_exact_window(deal: Any, since_utc: datetime, until_utc: datetime) -> bool:
+    dt = _deal_time_utc(deal)
+    if not dt:
+        return False
+    return since_utc <= dt < until_utc
+
+
+def _fetch_deals_once(since_utc: datetime, until_utc: datetime, warmup_days: int) -> tuple[list[Any], int, int]:
+    q_since = since_utc - timedelta(minutes=5)
+    q_until = until_utc + timedelta(minutes=5)
+
+    # warmup cache
+    warm_since = since_utc - timedelta(days=max(1, warmup_days))
+    _ = mt5.history_deals_get(warm_since, q_until)
+
+    merged: dict[str, Any] = {}
+    recovered_by_order_ticket = 0
+    recovered_by_position_id = 0
+
+    direct = mt5.history_deals_get(q_since, q_until)
+    if direct is None:
         code, message = mt5.last_error()
         raise SystemExit(f"history_deals_get failed: {code} - {message}")
-    return deals
+
+    for d in direct:
+        tid = _deal_ticket(d)
+        if tid:
+            merged[tid] = d
+
+    orders = mt5.history_orders_get(q_since, q_until) or []
+    for o in orders:
+        # fallback A: order ticket -> deals(ticket=...)
+        ot = getattr(o, "ticket", None)
+        if ot:
+            tdeals = mt5.history_deals_get(ticket=ot) or []
+            for d in tdeals:
+                if not _in_exact_window(d, since_utc, until_utc):
+                    continue
+                tid = _deal_ticket(d)
+                if not tid:
+                    continue
+                if tid not in merged:
+                    recovered_by_order_ticket += 1
+                merged[tid] = d
+
+        # fallback B: position id -> deals(position=...)
+        pos = getattr(o, "position_id", None)
+        if pos:
+            pdeals = mt5.history_deals_get(position=pos) or []
+            for d in pdeals:
+                if not _in_exact_window(d, since_utc, until_utc):
+                    continue
+                tid = _deal_ticket(d)
+                if not tid:
+                    continue
+                if tid not in merged:
+                    recovered_by_position_id += 1
+                merged[tid] = d
+
+    out = [d for d in merged.values() if _in_exact_window(d, since_utc, until_utc)]
+    out.sort(key=lambda x: getattr(x, "time", 0))
+    return out, recovered_by_order_ticket, recovered_by_position_id
+
+
+def get_deals(
+    since_utc: datetime,
+    until_utc: datetime,
+    retries: int = 4,
+    sleep_sec: float = 2.0,
+    warmup_days: int = 14,
+) -> list[Any]:
+    retries = max(1, retries)
+    best: list[Any] = []
+    prev_signature: str | None = None
+
+    for i in range(retries):
+        deals, rec_order, rec_pos = _fetch_deals_once(since_utc, until_utc, warmup_days=warmup_days)
+
+        trade_count = sum(
+            1
+            for d in deals
+            if getattr(d, "type", None) in (mt5.DEAL_TYPE_BUY, mt5.DEAL_TYPE_SELL)
+        )
+        pos_count = len(
+            {
+                str(getattr(d, "position_id", ""))
+                for d in deals
+                if getattr(d, "type", None) in (mt5.DEAL_TYPE_BUY, mt5.DEAL_TYPE_SELL)
+                and str(getattr(d, "position_id", ""))
+            }
+        )
+
+        ids = [_deal_ticket(d) for d in deals if _deal_ticket(d)]
+        signature = hashlib.sha256(("|".join(ids)).encode("utf-8")).hexdigest()
+
+        logging.info(
+            "Stable fetch attempt=%s/%s deals=%s trade_deals=%s positions=%s recovered(order_ticket)=%s recovered(position_id)=%s",
+            i + 1,
+            retries,
+            len(deals),
+            trade_count,
+            pos_count,
+            rec_order,
+            rec_pos,
+        )
+
+        if len(deals) > len(best):
+            best = deals
+
+        if prev_signature is not None and signature == prev_signature:
+            return deals
+
+        prev_signature = signature
+        if i < retries - 1:
+            time.sleep(max(0.0, sleep_sec))
+
+    logging.warning("Stable fetch did not converge; returning max-count snapshot=%s deals", len(best))
+    return best
 
 
 def write_jsonl(path: Path, events: list[RawEvent]) -> None:
@@ -397,7 +537,6 @@ def write_csv(path: Path, events: list[RawEvent]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     rows = [asdict(e) for e in events]
     if not rows:
-        rows = [asdict(RawEvent(**{k: None for k in RawEvent.__annotations__.keys()}))]  # type: ignore[arg-type]
         rows = []
     headers = list(RawEvent.__annotations__.keys())
     with path.open("w", encoding="utf-8", newline="") as f:
@@ -441,7 +580,6 @@ def build_daily_summaries(events: list[RawEvent], updated_at_utc: str) -> list[D
         buy_deals = sum(1 for e in trade_events if e.action == "Buy")
         sell_deals = sum(1 for e in trade_events if e.action == "Sell")
 
-        # Position-level PnL (closer to how XM reports total orders/trades)
         pnl_by_position: dict[str, float] = {}
         for e in trade_events:
             if e.position_id:
@@ -588,8 +726,18 @@ def main() -> int:
     for account in accounts:
         account_id, account_currency = init_mt5(account)
         health_check_preflight(account_id, account_currency)
-        deals = list(get_deals(since_utc, until_utc))
+
+        deals = list(
+            get_deals(
+                since_utc,
+                until_utc,
+                retries=args.stability_retries,
+                sleep_sec=args.stability_sleep_sec,
+                warmup_days=args.warmup_days,
+            )
+        )
         logging.info("Fetched deals: account=%s count=%s", account.label, len(deals))
+
         events.extend(
             [
                 normalize_deal(
@@ -605,22 +753,39 @@ def main() -> int:
         )
         mt5.shutdown()
 
-    logging.info("Fetched deals total across accounts: %s", len(events))
+    trade_events_count = sum(1 for e in events if e.event_type == "trade")
+    trade_positions_count = len(
+        {
+            f"{e.account_id}:{e.position_id}"
+            for e in events
+            if e.event_type == "trade" and e.position_id
+        }
+    )
+    logging.info(
+        "Fetched deals total across accounts: all_events=%s trade_events=%s trade_positions=%s",
+        len(events),
+        trade_events_count,
+        trade_positions_count,
+    )
 
     if args.output_format == "jsonl":
         write_jsonl(output_path, events)
     else:
         write_csv(output_path, events)
+
     summaries = build_daily_summaries(events, synced_at_utc)
     write_daily_summary_csv(summary_output_path, summaries)
     validate_outputs(output_path, summary_output_path, len(events), summaries)
     warn_if_abnormal_positions(state, summaries, args.warn_position_delta_ratio)
+
     if len(events) == 0:
         logging.warning("No events returned for window")
 
     if not args.dry_run:
         state["last_sync_time_utc"] = format_iso_utc(until_utc)
         state["last_run_event_count"] = len(events)
+        state["last_run_trade_event_count"] = trade_events_count
+        state["last_run_trade_positions"] = trade_positions_count
         state["last_run_id"] = etl_run_id
         state["last_positions_by_day"] = {s.trade_date_vn: s.total_positions for s in summaries}
         save_state(state_path, state)
@@ -630,6 +795,8 @@ def main() -> int:
             {
                 "status": "ok",
                 "events": len(events),
+                "trade_events": trade_events_count,
+                "trade_positions": trade_positions_count,
                 "since_utc": format_iso_utc(since_utc),
                 "until_utc": format_iso_utc(until_utc),
                 "output": str(output_path),
